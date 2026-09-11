@@ -125,13 +125,18 @@ def check() -> int:
             try:
                 from anthropic import Anthropic
 
-                client = Anthropic(api_key=judge_key)
+                judge_base = env("JUDGE_LLM_BASE_URL")
+                client_kwargs = {"api_key": judge_key}
+                if judge_base:
+                    client_kwargs["base_url"] = judge_base
+                client = Anthropic(**client_kwargs)
                 _ = client.messages.create(
                     model=judge_model,
                     max_tokens=8,
                     messages=[{"role": "user", "content": "ping"}],
                 )
-                _print_check(f"Judge (Anthropic, {judge_model}) antwortet", True)
+                where = f" via {judge_base}" if judge_base else ""
+                _print_check(f"Judge (Anthropic, {judge_model}){where} antwortet", True)
             except Exception as exc:  # noqa: BLE001
                 all_ok = False
                 _print_check(f"Judge (Anthropic, {judge_model}) antwortet", False, str(exc)[:200])
