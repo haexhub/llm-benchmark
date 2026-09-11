@@ -6,4 +6,7 @@
 #     name: sample-repo
 #     pr_numbers: [42, 43, 47]
 
-repos: []
+repos:
+  - owner: haexmas
+    name: holzi
+    pr_numbers: [27]

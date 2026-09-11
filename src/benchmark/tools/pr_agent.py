@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from benchmark.categorize import infer_category
 from benchmark.models import Finding
 from benchmark.tools.base import RunResult, run_cli
 
@@ -38,33 +39,39 @@ def build_pragent_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
         e["OPENAI__KEY"] = tool_key
         e["OPENAI_API_KEY"] = tool_key
     if tool_model:
-        # pr-agent uses litellm-style model identifiers; the caller usually passes them as-is.
-        # Prefix with openai/ if not already prefixed and looks like a bare model name.
-        model = tool_model if "/" in tool_model else f"openai/{tool_model}"
-        e["CONFIG__MODEL"] = model
+        # pr-agent/litellm needs an explicit "openai/" provider prefix since
+        # TOOL_LLM_BASE_URL is always an OpenAI-compatible custom endpoint
+        # (FR-004) — always prepend it. A naive "already has a slash, skip
+        # the prefix" check is wrong: HuggingFace-style model ids (e.g.
+        # "Qwen/Qwen3.8-27B-FP8") contain a slash themselves that has nothing
+        # to do with litellm's provider-prefix convention; verified live —
+        # without "openai/", litellm rejects the call with
+        # "LLM Provider NOT provided ... You passed model=Qwen/Qwen3.8-27B-FP8".
+        e["CONFIG__MODEL"] = f"openai/{tool_model}"
     gh_token = env("GH_TOKEN")
     if gh_token:
         e["GITHUB__USER_TOKEN"] = gh_token
     e["CONFIG__PUBLISH_OUTPUT"] = "false"
+    # Self-hosted models aren't in litellm's MAX_TOKENS table; without this every
+    # call fails with "not defined in MAX_TOKENS". Default pr-agent fallback
+    # models (e.g. a hardcoded "gpt-5.6-terra") don't exist against a custom
+    # endpoint either, and would otherwise mask the real failure as a fallback
+    # attempt instead of surfacing it.
+    e["CONFIG__CUSTOM_MODEL_MAX_TOKENS"] = env("TOOL_LLM_MAX_TOKENS", "32768")
+    e["CONFIG__FALLBACK_MODELS"] = "[]"
     return e
 
 
 def run_pragent_on_diff(diff_file: Path, json_output: Path, timeout: int = 600) -> RunResult:
-    """Run pr-agent in plain-diff local mode: no GitHub round-trip, just a local diff file."""
+    """Run pr-agent in plain-diff local mode: no GitHub round-trip, just a local diff file.
+
+    This is the only supported mode for us: --json-output is rejected by pr-agent
+    unless combined with --diff-file/--stdin (verified live; --pr_url + --json-output
+    exits with "error: --json-output is only supported in plain-diff mode").
+    """
     cmd = [
         "uv", "tool", "run", "--from", "pr-agent", "pr-agent",
         "--diff-file", str(diff_file),
-        "--json-output", str(json_output),
-        "review",
-    ]
-    return run_cli(cmd, timeout=timeout, env=build_pragent_env())
-
-
-def run_pragent_on_pr(pr_url: str, json_output: Path, timeout: int = 600) -> RunResult:
-    """Run pr-agent against a GitHub PR URL. Requires GH_TOKEN in the env."""
-    cmd = [
-        "uv", "tool", "run", "--from", "pr-agent", "pr-agent",
-        "--pr_url", pr_url,
         "--json-output", str(json_output),
         "review",
     ]
@@ -96,7 +103,7 @@ def parse_pragent_json(payload: dict[str, Any]) -> list[Finding]:
                 line_start=start,
                 line_end=end,
                 severity="major",  # pr-agent's key_issues sind alle "notable"; keine explicit severity
-                category=_infer_category(header, content),
+                category=infer_category(f"{header} {content}"),
                 title=header[:200],
                 body=content,
                 suggestion=None,
@@ -112,18 +119,3 @@ def load_pragent_findings(path: Path) -> list[Finding]:
     return parse_pragent_json(payload)
 
 
-def _infer_category(header: str, content: str) -> str:
-    text = f"{header} {content}".lower()
-    if any(k in text for k in ("security", "injection", "xss", "csrf", "auth", "secret")):
-        return "security"
-    if any(k in text for k in ("perf", "latency", "n+1", "memory")):
-        return "perf"
-    if any(k in text for k in ("test", "coverage", "assert")):
-        return "test"
-    if any(k in text for k in ("doc", "docstring", "readme")):
-        return "doc"
-    if any(k in text for k in ("bug", "issue", "exception", "error", "crash", "leak", "race", "undefined")):
-        return "bug"
-    if any(k in text for k in ("style", "naming", "format", "refactor", "cleanup")):
-        return "style"
-    return "other"

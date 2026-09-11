@@ -29,53 +29,73 @@ GITO_REPORT_FILENAME = "code-review-report.json"
 
 
 def build_gito_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
-    """gito uses microcore/LiteLLM under the hood; the env var names are LLM_*"""
+    """gito uses microcore under the hood — NOT litellm-style names/prefixes.
+
+    Verified live: microcore reads `LLM_API_TYPE`/`LLM_API_BASE`/`LLM_API_KEY`/`MODEL`
+    and expects a bare model id. A litellm-style `openai/<model>` prefix (correct
+    for pr-agent) breaks microcore's model-name handling here.
+    """
     from benchmark.config import env
 
     e = dict(base_env or os.environ)
+    e["LLM_API_TYPE"] = "openai"
     tool_base = env("TOOL_LLM_BASE_URL")
     tool_key = env("TOOL_LLM_API_KEY")
     tool_model = env("TOOL_LLM_MODEL")
     if tool_base:
         e["LLM_API_BASE"] = tool_base
-        e["LLM_BASE_URL"] = tool_base
-        e["OPENAI_API_BASE"] = tool_base
     if tool_key:
         e["LLM_API_KEY"] = tool_key
-        e["OPENAI_API_KEY"] = tool_key
     if tool_model:
-        e["LLM_MODEL"] = tool_model if tool_model.startswith("openai/") else f"openai/{tool_model}"
-        e["MODEL"] = e["LLM_MODEL"]
+        e["MODEL"] = tool_model
     return e
 
 
-def run_gito_on_pr(pr_url: str, out_dir: Path, pr_number: int, timeout: int = 600) -> RunResult:
-    """Run gito against a GitHub PR URL. gito clones the repo internally."""
+def run_gito_on_pr(
+    owner: str,
+    repo: str,
+    pr: int,
+    base_sha: str,
+    head_ref: str,
+    clone_dir: Path,
+    out_dir: Path,
+    timeout: int = 600,
+) -> RunResult:
+    """Clone the repo, fetch the PR's head ref, and run gito against that diff.
+
+    gito's own `--url` clones exactly that URL — passing a PR URL there fails
+    (`git clone <pr-url>` isn't a valid clone target; verified live). Its `--path`
+    option is unimplemented upstream (`# @todo: implement` in gito's own
+    cli.py). The only working mode for a specific PR is running gito with no
+    `--url` (its "use local repo at cwd" branch) inside an already-checked-out
+    clone, with `--what`/`--against` as explicit refs.
+    """
+    clone_dir.mkdir(parents=True, exist_ok=True)
+    repo_url = f"https://github.com/{owner}/{repo}.git"
+    local_head_ref = f"pr-{pr}-head"
+
+    clone_result = run_cli(["git", "clone", "--quiet", repo_url, str(clone_dir)], timeout=timeout)
+    if not clone_result.ok:
+        return clone_result
+    fetch_result = run_cli(
+        ["git", "fetch", "--quiet", "origin", f"refs/pull/{pr}/head:{local_head_ref}"],
+        timeout=timeout,
+        cwd=clone_dir,
+    )
+    if not fetch_result.ok:
+        return fetch_result
+
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "uv", "tool", "run", "--from", "gito.bot", "gito",
         "review",
-        "--url", pr_url,
-        "--pr", str(pr_number),
+        "--what", local_head_ref,
+        "--against", base_sha,
+        "--no-merge-base",
         "--out", str(out_dir),
         "--no-post-comment",
     ]
-    return run_cli(cmd, timeout=timeout, env=build_gito_env())
-
-
-def run_gito_on_local(repo_path: Path, out_dir: Path, what: str, against: str, timeout: int = 600) -> RunResult:
-    """Run gito against a local clone (faster, no network round-trip)."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "uv", "tool", "run", "--from", "gito.bot", "gito",
-        "review",
-        "--path", str(repo_path),
-        "--what", what,
-        "--against", against,
-        "--out", str(out_dir),
-        "--no-post-comment",
-    ]
-    return run_cli(cmd, timeout=timeout, env=build_gito_env())
+    return run_cli(cmd, timeout=timeout, env=build_gito_env(), cwd=clone_dir)
 
 
 def parse_gito_json(payload: dict[str, Any]) -> list[Finding]:

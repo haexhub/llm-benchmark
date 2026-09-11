@@ -124,10 +124,15 @@ class AnthropicJudge:
 
     def evaluate_pair(self, a: Finding, b: Finding, *, pr_context: str) -> JudgeVerdict:
         prep = build_blind_prompt(a, b, pr_context)
+        # No `temperature` param: verified live against anthropic==1.5.0, whose
+        # Messages.create() signature no longer accepts it at all (TypeError,
+        # not a server rejection) — likely moot anyway when routed through a
+        # CLI-wrapping proxy (e.g. haex-claude-proxy), which has no sampling
+        # knob to forward it to. Judge-run determinism is therefore best-effort
+        # (see research.md), not guaranteed.
         resp = self._client.messages.create(
             model=self.model,
             max_tokens=400,
-            temperature=0,
             messages=[{"role": "user", "content": prep.prompt_text}],
         )
         # anthropic 0.34+: response.content is a list of content blocks

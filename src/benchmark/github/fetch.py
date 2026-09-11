@@ -24,6 +24,24 @@ def fetch_diff(owner: str, repo: str, pr: int) -> str:
     return proc.stdout
 
 
+def fetch_pr_refs(owner: str, repo: str, pr: int) -> dict[str, str]:
+    """Return {base_sha, head_sha, head_ref} for a PR (used to review it in a local clone)."""
+    proc = subprocess.run(
+        ["gh", "api", f"repos/{owner}/{repo}/pulls/{pr}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"gh api pulls/{pr} failed for {owner}/{repo}: {proc.stderr.strip()}")
+    data = json.loads(proc.stdout)
+    return {
+        "base_sha": data["base"]["sha"],
+        "head_sha": data["head"]["sha"],
+        "head_ref": data["head"]["ref"],
+    }
+
+
 def fetch_cr_comments(owner: str, repo: str, pr: int) -> list[dict[str, Any]]:
     """Return the union of CR-authored comments from all three GitHub endpoints."""
     endpoints = [

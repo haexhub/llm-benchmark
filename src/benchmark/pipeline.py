@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from benchmark.coderabbit.parser import parse_cr
-from benchmark.github.fetch import fetch_cr_comments, fetch_diff
+from benchmark.github.fetch import fetch_cr_comments, fetch_diff, fetch_pr_refs
 from benchmark.matching.aggregator import apply_manual_reviews, load_manual_reviews
 from benchmark.matching.dedup import dedup_intra_tool
 from benchmark.matching.judge import JudgeClient, make_judge
@@ -20,7 +20,7 @@ from benchmark.tools.gito import (
     parse_gito_json,
     run_gito_on_pr,
 )
-from benchmark.tools.pr_agent import parse_pragent_json, run_pragent_on_pr
+from benchmark.tools.pr_agent import parse_pragent_json, run_pragent_on_diff
 
 log = logging.getLogger("benchmark.pipeline")
 
@@ -72,20 +72,19 @@ def do_run(repos: list[RepoConfig], runs_dir: Path, *, force: bool, active_repo:
         if not base.exists():
             log.warning("skip %s#%d: fetch not run yet", repo.slug, pr)
             continue
-        pr_url = f"https://github.com/{repo.owner}/{repo.name}/pull/{pr}"
 
         tasks: dict[str, callable] = {}
         gito_target = base / "gito.json"
         pragent_target = base / "pr-agent.json"
 
         if not gito_target.exists() or force:
-            def _do_gito(_b=base, _u=pr_url, _p=pr, _t=gito_target):
-                return _run_gito(_b, _u, _p, _t)
+            def _do_gito(_r=repo, _p=pr, _b=base, _t=gito_target):
+                return _run_gito(_r, _p, _b, _t)
 
             tasks["gito"] = _do_gito
         if not pragent_target.exists() or force:
-            def _do_pragent(_b=base, _u=pr_url, _t=pragent_target):
-                return _run_pragent(_b, _u, _t)
+            def _do_pragent(_b=base, _t=pragent_target):
+                return _run_pragent(_b, _t)
 
             tasks["pr-agent"] = _do_pragent
 
@@ -93,8 +92,14 @@ def do_run(repos: list[RepoConfig], runs_dir: Path, *, force: bool, active_repo:
             continue
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
-            futures = {name: ex.submit(fn) for name, fn in tasks.items()}
-            for name, fut in futures.items():
+            futures = {ex.submit(fn): name for name, fn in tasks.items()}
+            # as_completed (not futures.items()) so a fast failure is logged
+            # immediately instead of waiting behind a slower sibling task —
+            # gito can take 10x longer than pr-agent for the same PR, and
+            # iterating in submission order would delay (or on external kill,
+            # lose) a fast task's failed.log entry until gito's turn came up.
+            for fut in concurrent.futures.as_completed(futures):
+                name = futures[fut]
                 try:
                     fut.result()
                     log.info("%s completed for %s#%d", name, repo.slug, pr)
@@ -102,9 +107,14 @@ def do_run(repos: list[RepoConfig], runs_dir: Path, *, force: bool, active_repo:
                     _log_fail(base, f"run:{name}", exc)
 
 
-def _run_gito(base: Path, pr_url: str, pr: int, target: Path) -> None:
+def _run_gito(repo: RepoConfig, pr: int, base: Path, target: Path) -> None:
+    refs = fetch_pr_refs(repo.owner, repo.name, pr)
+    clone_dir = base / "gito-clone"
     out_dir = base / "gito-workdir"
-    result = run_gito_on_pr(pr_url, out_dir, pr, timeout=TOOL_TIMEOUT_SECONDS)
+    result = run_gito_on_pr(
+        repo.owner, repo.name, pr, refs["base_sha"], refs["head_ref"], clone_dir, out_dir,
+        timeout=TOOL_TIMEOUT_SECONDS,
+    )
     if not result.ok:
         raise RuntimeError(f"gito CLI failed rc={result.returncode}: {result.stderr[:400]}")
     report_path = out_dir / GITO_REPORT_FILENAME
@@ -116,9 +126,10 @@ def _run_gito(base: Path, pr_url: str, pr: int, target: Path) -> None:
     target.write_text(_dump_findings(findings))
 
 
-def _run_pragent(base: Path, pr_url: str, target: Path) -> None:
+def _run_pragent(base: Path, target: Path) -> None:
+    diff_file = base / "diff.patch"
     raw_out = base / "pr-agent-raw.json"
-    result = run_pragent_on_pr(pr_url, raw_out, timeout=TOOL_TIMEOUT_SECONDS)
+    result = run_pragent_on_diff(diff_file, raw_out, timeout=TOOL_TIMEOUT_SECONDS)
     if not result.ok:
         raise RuntimeError(f"pr-agent CLI failed rc={result.returncode}: {result.stderr[:400]}")
     if not raw_out.exists():
