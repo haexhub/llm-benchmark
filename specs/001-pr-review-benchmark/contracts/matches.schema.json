@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.internal/llm-benchmark/matches.schema.json",
+  "title": "MatchesFile",
+  "description": "Inhalt von matches.json pro (Repo, PR). Enthält alle strukturell in Frage kommenden Finding-Paare mit Judge-Bewertung. Cross-Tool und Intra-Tool (Duplikate).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "matches"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "matches": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/Match"}
+    }
+  },
+  "$defs": {
+    "Match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "a_id", "b_id", "structural_overlap_lines", "verdict", "classification"],
+      "properties": {
+        "id": {"type": "string", "format": "uuid"},
+        "a_id": {"type": "string", "format": "uuid"},
+        "b_id": {"type": "string", "format": "uuid"},
+        "structural_overlap_lines": {"type": "integer", "minimum": 0},
+        "verdict": {"$ref": "#/$defs/JudgeVerdict"},
+        "classification": {
+          "type": "string",
+          "enum": ["same", "different", "uncertain"]
+        }
+      }
+    },
+    "JudgeVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["same", "confidence", "reason", "judge_model", "prompt_hash"],
+      "properties": {
+        "same": {"type": "boolean"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "reason": {"type": "string"},
+        "judge_model": {"type": "string"},
+        "prompt_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

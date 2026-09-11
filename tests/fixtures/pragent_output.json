@@ -1,0 +1,31 @@
+{
+  "review": {
+    "estimated_effort_to_review_in_minutes": 4,
+    "review_effort": "3, moderate",
+    "relevant_tests": "No",
+    "security_concerns": "No",
+    "key_issues_to_review": [
+      {
+        "relevant_file": "src/api/handlers.py",
+        "issue_header": "Overly broad exception handler",
+        "issue_content": "The except clause catches Exception and swallows the traceback, hiding real bugs and complicating debugging. Consider narrower exception types and log with exc_info.",
+        "start_line": 142,
+        "end_line": 158
+      },
+      {
+        "relevant_file": "src/api/handlers.py",
+        "issue_header": "Missing input validation",
+        "issue_content": "The `payload` dict from request.json() is dereferenced without checking required fields — a malformed request will raise KeyError as a 500 instead of a 400.",
+        "start_line": 60,
+        "end_line": 65
+      },
+      {
+        "relevant_file": "src/models/user.py",
+        "issue_header": "Unbounded default list",
+        "issue_content": "Using a mutable default argument (default=[]) for `permissions` will cause all instances to share the same list.",
+        "start_line": 22,
+        "end_line": 22
+      }
+    ]
+  }
+}

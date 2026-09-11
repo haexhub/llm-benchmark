@@ -1,0 +1,41 @@
+{
+  "summary": "Reviewed 3 files, 2 issues found.",
+  "issues": {
+    "src/api/handlers.py": [
+      {
+        "id": 1,
+        "title": "Broad except swallows errors",
+        "details": "The bare except Exception block hides the real error. Narrow it and re-raise unexpected errors after logging.",
+        "severity": 4,
+        "confidence": 5,
+        "tags": ["bug", "error-handling"],
+        "file": "src/api/handlers.py",
+        "affected_lines": [
+          {
+            "start_line": 144,
+            "end_line": 156,
+            "proposal": "except (ValueError, KeyError) as exc:\n    log.warning('bad input', exc_info=exc)"
+          }
+        ]
+      }
+    ],
+    "src/models/user.py": [
+      {
+        "id": 2,
+        "title": "Mutable default argument",
+        "details": "Using [] as default for `permissions` shares state across all instances.",
+        "severity": 3,
+        "confidence": 4,
+        "tags": ["bug", "python"],
+        "file": "src/models/user.py",
+        "affected_lines": [
+          {
+            "start_line": 22,
+            "end_line": 22,
+            "proposal": "permissions: list[str] | None = None"
+          }
+        ]
+      }
+    ]
+  }
+}

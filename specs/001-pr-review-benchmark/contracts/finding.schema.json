@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.internal/llm-benchmark/finding.schema.json",
+  "title": "Finding",
+  "description": "Ein Review-Kommentar eines der drei Tools (CodeRabbit, gito, pr-agent) zu einer Codestelle. Wird in coderabbit.json / gito.json / pr-agent.json pro (Repo, PR) als Array persistiert.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tool", "file", "line_start", "line_end", "severity", "category", "title", "body", "raw"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUIDv4, stabil pro Finding innerhalb einer Datei; für Match-Referenzen."
+    },
+    "tool": {
+      "type": "string",
+      "enum": ["coderabbit", "gito", "pr-agent"]
+    },
+    "file": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Datei-Pfad relativ zum Repo-Root."
+    },
+    "line_start": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "1-basiert; 0 bedeutet File-Level-Finding (kein spezifischer Anker)."
+    },
+    "line_end": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "major", "minor", "nit", "info"]
+    },
+    "category": {
+      "type": "string",
+      "enum": ["bug", "security", "perf", "style", "test", "doc", "other", "unknown"]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1
+    },
+    "suggestion": {
+      "type": ["string", "null"],
+      "description": "Optional: Code-Vorschlag des Tools, falls einer angegeben wurde."
+    },
+    "raw": {
+      "type": "object",
+      "description": "Ungefilterte Ursprungs-Ausgabe des Tools; für Debugging und Nachverfolgung. Struktur ist tool-spezifisch."
+    }
+  }
+}

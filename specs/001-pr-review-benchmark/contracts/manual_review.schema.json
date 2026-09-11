@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.internal/llm-benchmark/manual_review.schema.json",
+  "title": "ManualReviewFile",
+  "description": "Menschliche Überstimmung von Judge-Klassifikationen. Wird händisch in runs/<repo>/<pr#>/manual_review.json angelegt oder editiert. Überschreibt Match.classification im Aggregations-Schritt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "reviews"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1"},
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["match_id", "decision", "reviewer", "ts"],
+        "properties": {
+          "match_id": {"type": "string", "format": "uuid"},
+          "decision": {
+            "type": "string",
+            "enum": ["same", "different", "unclear"]
+          },
+          "note": {"type": ["string", "null"]},
+          "reviewer": {"type": "string", "minLength": 1},
+          "ts": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

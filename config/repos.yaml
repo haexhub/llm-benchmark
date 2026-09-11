@@ -1,0 +1,9 @@
+# Liste der zu benchmarkenden Repositories und PRs.
+# Jedes Repo listet die konkreten PR-Nummern die von CodeRabbit reviewed wurden.
+#
+# repos:
+#   - owner: your-user
+#     name: sample-repo
+#     pr_numbers: [42, 43, 47]
+
+repos: []
