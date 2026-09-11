@@ -107,11 +107,20 @@ def _parse_verdict(raw: str, model: str, prompt_hash: str) -> JudgeVerdict:
 
 
 class AnthropicJudge:
-    def __init__(self, model: str | None = None, api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+    ) -> None:
         from anthropic import Anthropic
 
         self.model = model or require_env("JUDGE_LLM_MODEL")
-        self._client = Anthropic(api_key=api_key or require_env("JUDGE_LLM_API_KEY"))
+        resolved_base = base_url if base_url is not None else env("JUDGE_LLM_BASE_URL")
+        client_kwargs = {"api_key": api_key or require_env("JUDGE_LLM_API_KEY")}
+        if resolved_base:
+            client_kwargs["base_url"] = resolved_base
+        self._client = Anthropic(**client_kwargs)
 
     def evaluate_pair(self, a: Finding, b: Finding, *, pr_context: str) -> JudgeVerdict:
         prep = build_blind_prompt(a, b, pr_context)

@@ -56,3 +56,24 @@ def test_openai_missing_base_url_raises(monkeypatch: pytest.MonkeyPatch) -> None
 
     with pytest.raises(EnvConfigError):
         make_judge()
+
+
+def test_anthropic_accepts_optional_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """haex-claude-proxy support: Anthropic client honors a custom base_url from env."""
+    monkeypatch.setenv("JUDGE_LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("JUDGE_LLM_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("JUDGE_LLM_MODEL", "claude-sonnet-4-5")
+    monkeypatch.setenv("JUDGE_LLM_BASE_URL", "http://localhost:8123")
+    j = make_judge()
+    assert isinstance(j, AnthropicJudge)
+    # Underlying anthropic.Anthropic exposes the base_url on the client
+    assert str(j._client.base_url).rstrip("/") == "http://localhost:8123"
+
+
+def test_anthropic_no_base_url_uses_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JUDGE_LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("JUDGE_LLM_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("JUDGE_LLM_MODEL", "claude-sonnet-4-5")
+    monkeypatch.delenv("JUDGE_LLM_BASE_URL", raising=False)
+    j = make_judge()
+    assert "anthropic.com" in str(j._client.base_url)
