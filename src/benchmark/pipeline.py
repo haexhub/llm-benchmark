@@ -24,7 +24,11 @@ from benchmark.tools.pr_agent import parse_pragent_json, run_pragent_on_diff
 
 log = logging.getLogger("benchmark.pipeline")
 
-TOOL_TIMEOUT_SECONDS = 600
+# 30 min: verified live that gito needs ~15-25 min for a 36-file PR against
+# the itemis Qwen endpoint (one LLM call per file, no internal parallelism —
+# see research.md R9). The original 600s (10 min) killed both gito and
+# pr-agent mid-review on that PR with rc=-1 (timeout), not a code bug.
+TOOL_TIMEOUT_SECONDS = 1800
 UNCERTAIN_CONFIDENCE_THRESHOLD = 0.6
 
 

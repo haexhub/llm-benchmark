@@ -45,7 +45,7 @@ Der Nutzer interagiert ausschließlich per Kommandozeile: `python -m benchmark <
 **Aktionen**:
 1. Pro `(Repo, PR)` ohne existierendes `gito.json` und `pr-agent.json`: beide Tools als Subprozesse nebenläufig starten (`ThreadPoolExecutor(2)`).
 2. Stdout/Stderr in temp-Datei, dann parsen → `gito.json` bzw. `pr-agent.json` schreiben.
-3. Timeout pro Tool: 10 min. Auf Timeout → `failed.log`-Eintrag, restlicher Batch weiter.
+3. Timeout pro Tool: 30 min (`TOOL_TIMEOUT_SECONDS` in `pipeline.py`; erhöht von ursprünglich 10 min, nachdem ein Live-Test bei einer 36-Datei-PR zeigte dass gito dafür 15-25 min braucht — siehe research.md R9). Auf Timeout → `failed.log`-Eintrag, restlicher Batch weiter.
 
 **Voraussetzung**: `fetch` ist gelaufen (`diff.patch` und `coderabbit.json` müssen existieren; sonst error early).
 
