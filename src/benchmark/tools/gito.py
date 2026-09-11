@@ -92,7 +92,11 @@ def run_gito_on_pr(
         "--what", local_head_ref,
         "--against", base_sha,
         "--no-merge-base",
-        "--out", str(out_dir),
+        # Must be absolute: gito runs with cwd=clone_dir (below), so a relative
+        # --out would resolve against the clone dir instead of the caller's cwd.
+        # Verified live: a relative out_dir produced
+        # "<clone_dir>/<out_dir>/code-review-report.json" instead of "<out_dir>/...".
+        "--out", str(out_dir.resolve()),
         "--no-post-comment",
     ]
     return run_cli(cmd, timeout=timeout, env=build_gito_env(), cwd=clone_dir)
