@@ -53,12 +53,25 @@ def build_pragent_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
         e["GITHUB__USER_TOKEN"] = gh_token
     e["CONFIG__PUBLISH_OUTPUT"] = "false"
     # Self-hosted models aren't in litellm's MAX_TOKENS table; without this every
-    # call fails with "not defined in MAX_TOKENS". Default pr-agent fallback
-    # models (e.g. a hardcoded "gpt-5.6-terra") don't exist against a custom
-    # endpoint either, and would otherwise mask the real failure as a fallback
-    # attempt instead of surfacing it.
+    # call fails with "not defined in MAX_TOKENS".
     e["CONFIG__CUSTOM_MODEL_MAX_TOKENS"] = env("TOOL_LLM_MAX_TOKENS", "32768")
+    # Default pr-agent fallback models (e.g. a hardcoded "gpt-5.6-terra") don't
+    # exist against a custom endpoint. This override is set for documentation/
+    # intent, but verified live NOT to take effect: pr-agent's custom_merge_loader
+    # re-applies configuration.toml's list-typed settings (fallback_models is a
+    # list) after env vars are merged, silently discarding this override —
+    # plain string/int overrides (CONFIG__MODEL, CONFIG__CUSTOM_MODEL_MAX_TOKENS,
+    # CONFIG__AI_TIMEOUT) are unaffected and do work. Harmless either way once
+    # CONFIG__AI_TIMEOUT is generous enough that the primary model succeeds and
+    # fallback is never reached.
     e["CONFIG__FALLBACK_MODELS"] = "[]"
+    # litellm's own per-request timeout (config.ai_timeout, default 120s) is
+    # separate from — and much shorter than — our subprocess-level
+    # TOOL_TIMEOUT_SECONDS. Verified live: a single completion call for a
+    # large (~32k token, post-pruning) diff against this Qwen endpoint took
+    # ~362s. Without raising this, every large-PR review fails on ai_timeout
+    # before our own subprocess timeout ever gets a chance to matter.
+    e["CONFIG__AI_TIMEOUT"] = env("TOOL_LLM_AI_TIMEOUT", "1200")
     return e
 
 

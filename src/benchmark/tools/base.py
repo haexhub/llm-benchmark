@@ -1,7 +1,10 @@
 """Common subprocess handling: timeout, stdout/stderr capture, env merging."""
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,22 +31,32 @@ def run_cli(
     env: dict[str, str] | None = None,
     cwd: Path | None = None,
 ) -> RunResult:
+    """Run `cmd`, killing its whole process group on timeout.
+
+    `subprocess.run(..., timeout=...)` only kills the direct child. Both gito
+    and pr-agent are launched via `uv tool run --from <pkg> <tool> ...`, which
+    does not forward signals to the tool process it spawns — verified live: a
+    gito review outlived its killed `uv tool run` wrapper by 15+ minutes,
+    running on as an orphan (reparented to init) and continuing to hit the
+    LLM endpoint. `start_new_session=True` puts the whole tree in its own
+    process group so a timeout can take all of it out via `os.killpg`.
+    """
     log.debug("running: %s", " ".join(cmd))
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        cwd=cwd,
+        start_new_session=True,
+    )
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=env,
-            cwd=cwd,
-        )
-    except subprocess.TimeoutExpired as exc:
-        log.warning("timeout after %ss for %s", timeout, cmd[0])
-        return RunResult(
-            returncode=-1,
-            stdout=exc.stdout or "" if isinstance(exc.stdout, str) else "",
-            stderr=exc.stderr or "" if isinstance(exc.stderr, str) else "",
-            timed_out=True,
-        )
-    return RunResult(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        log.warning("timeout after %ss for %s — killing process group", timeout, cmd[0])
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        stdout, stderr = proc.communicate()
+        return RunResult(returncode=-1, stdout=stdout or "", stderr=stderr or "", timed_out=True)
+    return RunResult(returncode=proc.returncode, stdout=stdout, stderr=stderr)

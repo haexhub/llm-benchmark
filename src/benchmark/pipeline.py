@@ -123,7 +123,13 @@ def _run_gito(repo: RepoConfig, pr: int, base: Path, target: Path) -> None:
         raise RuntimeError(f"gito CLI failed rc={result.returncode}: {result.stderr[:400]}")
     report_path = out_dir / GITO_REPORT_FILENAME
     if not report_path.exists():
-        raise RuntimeError(f"gito produced no report at {report_path}")
+        # rc==0 doesn't guarantee gito actually wrote a report; include the
+        # tail of both streams so a stuck/silent failure is diagnosable from
+        # failed.log alone instead of requiring a manual re-run.
+        raise RuntimeError(
+            f"gito produced no report at {report_path} (rc={result.returncode}); "
+            f"stdout tail: {result.stdout[-400:]!r}; stderr tail: {result.stderr[-400:]!r}"
+        )
     with report_path.open() as fh:
         payload = json.load(fh)
     findings = parse_gito_json(payload)
@@ -137,7 +143,14 @@ def _run_pragent(base: Path, target: Path) -> None:
     if not result.ok:
         raise RuntimeError(f"pr-agent CLI failed rc={result.returncode}: {result.stderr[:400]}")
     if not raw_out.exists():
-        raise RuntimeError(f"pr-agent produced no JSON output at {raw_out}")
+        # pr-agent's CLI returns rc=0 even when the review itself failed
+        # internally (e.g. "Failed to review PR" printed to stdout, no file
+        # written) — include the tail of both streams so the real cause
+        # (usually an LLM-side error) is visible from failed.log alone.
+        raise RuntimeError(
+            f"pr-agent produced no JSON output at {raw_out} (rc={result.returncode}); "
+            f"stdout tail: {result.stdout[-400:]!r}; stderr tail: {result.stderr[-400:]!r}"
+        )
     with raw_out.open() as fh:
         payload = json.load(fh)
     findings = parse_pragent_json(payload)
