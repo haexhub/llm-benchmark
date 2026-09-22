@@ -18,6 +18,7 @@ from .scheduler import (
     LiveChallengerResult,
     LiveChallengerScheduler,
 )
+from .webhook import PullRequestEventAdapter
 
 __all__ = [
     "CodeRabbitSnapshot",
@@ -31,6 +32,7 @@ __all__ = [
     "render_live_observation",
     "render_stored_live_observation",
     "LiveShadowRunner",
+    "PullRequestEventAdapter",
     "LiveChallengerScheduler",
     "LivePRObservation",
     "LivePRSnapshot",

@@ -14,6 +14,12 @@ captured CodeRabbit snapshot and persisted challenger results. It does not
 post to GitHub and labels every view as operational-only rather than a Gold
 benchmark score.
 
+The `PullRequestEventAdapter` is the boundary for a verified GitHub
+`pull_request` webhook: it accepts only `opened`, `reopened` and `synchronize`
+events from configured repositories and captures the Base/Head SHA pair in the
+payload. HTTP signature verification belongs to the deployment endpoint that
+invokes this adapter; this package deliberately does not expose one yet.
+
 Do not add a repository to live processing until its explicit opt-in, retention
 policy and credentials are configured. Live observations are operational-only
 and never replace Corpus Gold scoring.

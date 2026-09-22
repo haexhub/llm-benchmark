@@ -29,8 +29,24 @@ class LivePRIngestor:
         if not integration.enabled:
             raise ValueError(f"Live PR shadow review is not enabled for {integration.slug}")
         refs = self._fetch_refs(integration.owner, integration.name, pr_number)
-        base_sha = refs["base_sha"]
-        head_sha = refs["head_sha"]
+        return self.ingest_snapshot(
+            integration,
+            pr_number,
+            base_sha=refs["base_sha"],
+            head_sha=refs["head_sha"],
+        )
+
+    def ingest_snapshot(
+        self,
+        integration: LiveRepositoryIntegration,
+        pr_number: int,
+        *,
+        base_sha: str,
+        head_sha: str,
+    ) -> ObservationRecordResult:
+        """Persist an event-supplied revision without consulting a mutable PR ref."""
+        if not integration.enabled:
+            raise ValueError(f"Live PR shadow review is not enabled for {integration.slug}")
         diff = self._fetch_diff(integration.owner, integration.name, base_sha, head_sha)
         snapshot = LivePRSnapshot(
             repository=integration.slug,

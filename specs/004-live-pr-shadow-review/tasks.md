@@ -8,5 +8,5 @@
 - [x] T006 Capture immutable Base/Head diff artifacts at event intake.
 - [x] T007 Capture CodeRabbit snapshots only for the matching Head SHA.
 - [x] T008 Persist challenger findings/attempts and render private three-way view.
-- [ ] T009 Add GitHub webhook/event adapter and supersession tests.
+- [x] T009 Add GitHub webhook/event adapter and supersession tests.
 - [ ] T010 Replace process-local scheduler with the Run Engine resource lease.
