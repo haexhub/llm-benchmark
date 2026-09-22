@@ -24,6 +24,14 @@ produce a Gold score.
 One gito or PR-Agent execution with copied Base/Head SHA, terminal state,
 duration and error. Failures are records, not zero findings.
 
+## `CodeRabbitSnapshot`
+
+Normalized CodeRabbit findings plus the exact `head_sha` that CodeRabbit
+reviewed and a capture timestamp. The store rejects the snapshot unless this
+SHA equals the observation Head SHA, accepts only `coderabbit` findings and
+writes the artifact once. Replays return the original stored baseline rather
+than replacing it.
+
 ## Storage boundary
 
 The initial store is append-only filesystem state for testable idempotency. A

@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from benchmark.models import Finding
 
 
 class LivePRSnapshot(BaseModel):
@@ -42,6 +44,31 @@ class ObservationRecordResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     observation: LivePRObservation
+    created: bool
+
+
+class CodeRabbitSnapshot(BaseModel):
+    """Normalized CodeRabbit output for one explicitly identified PR Head."""
+
+    model_config = ConfigDict(frozen=True)
+
+    head_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
+    findings: tuple[Finding, ...] = ()
+    captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def _contains_only_coderabbit_findings(self) -> CodeRabbitSnapshot:
+        if any(finding.tool != "coderabbit" for finding in self.findings):
+            raise ValueError("CodeRabbit findings must have tool='coderabbit'")
+        return self
+
+
+class CodeRabbitSnapshotRecordResult(BaseModel):
+    """Whether a baseline capture was new or an idempotent replay."""
+
+    model_config = ConfigDict(frozen=True)
+
+    snapshot: CodeRabbitSnapshot
     created: bool
 
 
@@ -85,6 +112,28 @@ class LiveObservationStore:
     def diff_path(self, snapshot: LivePRSnapshot) -> Path:
         """Return the private, immutable patch artifact location for a snapshot."""
         return self._path_for(snapshot).with_suffix(".patch")
+
+    def record_coderabbit_snapshot(
+        self, observation: LivePRSnapshot, baseline: CodeRabbitSnapshot
+    ) -> CodeRabbitSnapshotRecordResult:
+        """Persist CodeRabbit output only when it names the observation's exact Head."""
+        if baseline.head_sha != observation.head_sha:
+            raise ValueError("CodeRabbit snapshot Head SHA does not match the observation")
+        self.record(observation)
+        destination = self.coderabbit_path(observation)
+        try:
+            with destination.open("x") as output:
+                output.write(baseline.model_dump_json(indent=2) + "\n")
+        except FileExistsError:
+            return CodeRabbitSnapshotRecordResult(
+                snapshot=CodeRabbitSnapshot.model_validate_json(destination.read_text()),
+                created=False,
+            )
+        return CodeRabbitSnapshotRecordResult(snapshot=baseline, created=True)
+
+    def coderabbit_path(self, snapshot: LivePRSnapshot) -> Path:
+        """Return the private, immutable CodeRabbit artifact location for a snapshot."""
+        return self._path_for(snapshot).with_suffix(".coderabbit.json")
 
     def _path_for(self, snapshot: LivePRSnapshot) -> Path:
         repo_slug = snapshot.repository.replace("/", "__")
