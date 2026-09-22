@@ -11,7 +11,8 @@ from .observations import (
     ObservationRecordResult,
 )
 from .report import render_live_observation, render_stored_live_observation
-from .runner import LiveShadowRunner
+from .resource_lease import ResourceLease, SqliteResourceLeaseStore
+from .runner import LiveShadowRunner, ResourceUnavailable
 from .scheduler import (
     ChallengerResultRecordResult,
     LiveChallengerAttempt,
@@ -31,7 +32,10 @@ __all__ = [
     "ChallengerResultRecordResult",
     "render_live_observation",
     "render_stored_live_observation",
+    "ResourceLease",
+    "SqliteResourceLeaseStore",
     "LiveShadowRunner",
+    "ResourceUnavailable",
     "PullRequestEventAdapter",
     "LiveChallengerScheduler",
     "LivePRObservation",

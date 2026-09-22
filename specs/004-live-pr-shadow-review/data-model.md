@@ -39,6 +39,15 @@ SHA equals the observation Head SHA, accepts only `coderabbit` findings and
 writes the artifact once. Replays return the original stored baseline rather
 than replacing it.
 
+## `ResourceLease`
+
+The local `local-94gb-gpu` resource has capacity one. A worker atomically
+acquires a durable token before it runs any pending challenger, renews it when
+needed and releases only its own token. Expired tokens are reclaimed by the
+next worker, so a crashed process cannot permanently block the queue. The
+initial SQLite implementation coordinates workers on the same GPU host behind
+an interface that can later receive the PostgreSQL control-plane adapter.
+
 ## Storage boundary
 
 The initial store is append-only filesystem state for testable idempotency. A

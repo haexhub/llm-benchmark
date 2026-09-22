@@ -7,15 +7,31 @@ from collections.abc import Callable, Mapping
 from benchmark.models import Finding
 
 from .observations import LiveObservationStore, LivePRSnapshot
+from .resource_lease import SqliteResourceLeaseStore
 from .scheduler import LiveChallengerResult, LiveChallengerScheduler
 
 
-class LiveShadowRunner:
-    """Run pending challengers serially and retain terminal results for one snapshot."""
+class ResourceUnavailable(RuntimeError):
+    """Raised when another worker currently owns the only local GPU lease."""
 
-    def __init__(self, store: LiveObservationStore, scheduler: LiveChallengerScheduler) -> None:
+
+class LiveShadowRunner:
+    """Run pending challengers under the shared GPU lease and retain their results."""
+
+    def __init__(
+        self,
+        store: LiveObservationStore,
+        scheduler: LiveChallengerScheduler,
+        lease_store: SqliteResourceLeaseStore,
+        *,
+        worker_id: str,
+        lease_ttl_seconds: float = 3600,
+    ) -> None:
         self._store = store
         self._scheduler = scheduler
+        self._lease_store = lease_store
+        self._worker_id = worker_id
+        self._lease_ttl_seconds = lease_ttl_seconds
 
     def run(
         self,
@@ -37,7 +53,17 @@ class LiveShadowRunner:
 
             pending[name] = capture
 
-        attempts = self._scheduler.run(observation, pending) if pending else []
+        if not pending:
+            return [existing[name] for name in challengers if name in existing]
+        lease = self._lease_store.acquire(
+            "local-94gb-gpu", self._worker_id, ttl_seconds=self._lease_ttl_seconds
+        )
+        if lease is None:
+            raise ResourceUnavailable("local-94gb-gpu is leased by another worker")
+        try:
+            attempts = self._scheduler.run(observation, pending)
+        finally:
+            lease.release()
         for attempt in attempts:
             result = LiveChallengerResult(
                 attempt=attempt,

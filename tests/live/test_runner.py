@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 from benchmark.live import (
     LiveChallengerScheduler,
     LiveObservationStore,
     LivePRSnapshot,
     LiveShadowRunner,
+    ResourceUnavailable,
+    SqliteResourceLeaseStore,
 )
 from benchmark.models import Finding
 
@@ -18,7 +22,12 @@ def test_runs_a_challenger_through_the_scheduler_and_persists_its_result(tmp_pat
         diff_sha256="c" * 64,
     )
     store = LiveObservationStore(tmp_path)
-    runner = LiveShadowRunner(store, LiveChallengerScheduler())
+    runner = LiveShadowRunner(
+        store,
+        LiveChallengerScheduler(),
+        SqliteResourceLeaseStore(tmp_path / "run-engine.sqlite3"),
+        worker_id="worker-a",
+    )
 
     results = runner.run(
         observation,
@@ -51,7 +60,12 @@ def test_retains_a_failed_attempt_without_blocking_the_next_challenger(tmp_path)
         diff_sha256="c" * 64,
     )
     store = LiveObservationStore(tmp_path)
-    runner = LiveShadowRunner(store, LiveChallengerScheduler())
+    runner = LiveShadowRunner(
+        store,
+        LiveChallengerScheduler(),
+        SqliteResourceLeaseStore(tmp_path / "run-engine.sqlite3"),
+        worker_id="worker-a",
+    )
 
     results = runner.run(
         observation,
@@ -66,3 +80,27 @@ def test_retains_a_failed_attempt_without_blocking_the_next_challenger(tmp_path)
 
 def _raise_endpoint_error(_snapshot: LivePRSnapshot) -> list[Finding]:
     raise RuntimeError("endpoint unavailable")
+
+
+def test_does_not_run_a_local_challenger_without_the_gpu_lease(tmp_path) -> None:
+    observation = LivePRSnapshot(
+        repository="haexmas/holzi",
+        pr_number=27,
+        base_sha="a" * 40,
+        head_sha="b" * 40,
+        diff_sha256="c" * 64,
+    )
+    lease_store = SqliteResourceLeaseStore(tmp_path / "run-engine.sqlite3")
+    runner = LiveShadowRunner(
+        LiveObservationStore(tmp_path / "observations"),
+        LiveChallengerScheduler(),
+        lease_store,
+        worker_id="worker-b",
+    )
+    lease = lease_store.acquire("local-94gb-gpu", "worker-a", ttl_seconds=60)
+    assert lease is not None
+
+    with pytest.raises(ResourceUnavailable, match="local-94gb-gpu"):
+        runner.run(observation, {"gito": lambda _snapshot: []})
+
+    lease.release()

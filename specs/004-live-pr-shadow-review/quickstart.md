@@ -20,6 +20,11 @@ events from configured repositories and captures the Base/Head SHA pair in the
 payload. HTTP signature verification belongs to the deployment endpoint that
 invokes this adapter; this package deliberately does not expose one yet.
 
+Workers that execute gito or PR-Agent must construct `LiveShadowRunner` with a
+shared `SqliteResourceLeaseStore` database path on the GPU host. The runner
+does not execute a pending local challenger until it holds the
+`local-94gb-gpu` lease.
+
 Do not add a repository to live processing until its explicit opt-in, retention
 policy and credentials are configured. Live observations are operational-only
 and never replace Corpus Gold scoring.

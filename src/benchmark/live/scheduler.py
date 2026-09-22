@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from threading import Lock
 from time import monotonic
 from typing import Literal
 
@@ -56,24 +55,20 @@ class ChallengerResultRecordResult(BaseModel):
 
 
 class LiveChallengerScheduler:
-    """One-process serialized queue for local challengers sharing the GPU."""
-
-    def __init__(self) -> None:
-        self._lock = Lock()
+    """Execute a worker's leased challengers in a deterministic order."""
 
     def run(
         self,
         snapshot: LivePRSnapshot,
         challengers: Mapping[str, Callable[[LivePRSnapshot], None]],
     ) -> list[LiveChallengerAttempt]:
-        """Run requested challengers in stable order without cross-PR overlap."""
-        with self._lock:
-            attempts: list[LiveChallengerAttempt] = []
-            canonical_order = [name for name in ("gito", "pr-agent") if name in challengers]
-            remaining = sorted(set(challengers) - set(canonical_order))
-            for challenger_name in [*canonical_order, *remaining]:
-                attempts.append(self._run_one(challenger_name, challengers[challenger_name], snapshot))
-            return attempts
+        """Run requested challengers in stable order under the caller's resource lease."""
+        attempts: list[LiveChallengerAttempt] = []
+        canonical_order = [name for name in ("gito", "pr-agent") if name in challengers]
+        remaining = sorted(set(challengers) - set(canonical_order))
+        for challenger_name in [*canonical_order, *remaining]:
+            attempts.append(self._run_one(challenger_name, challengers[challenger_name], snapshot))
+        return attempts
 
     @staticmethod
     def _run_one(

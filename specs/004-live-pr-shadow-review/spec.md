@@ -2,7 +2,7 @@
 
 **Feature Branch**: `004-live-pr-shadow-review`  
 **Created**: 2026-09-22  
-**Status**: Draft  
+**Status**: Implemented
 **Input**: Run gito and PR-Agent for every opted-in PR alongside CodeRabbit,
 using one immutable PR revision and serialized local execution.
 
