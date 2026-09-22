@@ -10,7 +10,14 @@ from .observations import (
     LivePRSnapshot,
     ObservationRecordResult,
 )
-from .scheduler import LiveChallengerAttempt, LiveChallengerScheduler
+from .report import render_live_observation, render_stored_live_observation
+from .runner import LiveShadowRunner
+from .scheduler import (
+    ChallengerResultRecordResult,
+    LiveChallengerAttempt,
+    LiveChallengerResult,
+    LiveChallengerScheduler,
+)
 
 __all__ = [
     "CodeRabbitSnapshot",
@@ -19,6 +26,11 @@ __all__ = [
     "LiveObservationStore",
     "LivePRIngestor",
     "LiveChallengerAttempt",
+    "LiveChallengerResult",
+    "ChallengerResultRecordResult",
+    "render_live_observation",
+    "render_stored_live_observation",
+    "LiveShadowRunner",
     "LiveChallengerScheduler",
     "LivePRObservation",
     "LivePRSnapshot",

@@ -24,6 +24,13 @@ produce a Gold score.
 One gito or PR-Agent execution with copied Base/Head SHA, terminal state,
 duration and error. Failures are records, not zero findings.
 
+## `LiveChallengerResult`
+
+An immutable terminal attempt plus normalized findings. A successful result
+always carries a findings set (which may be empty); a failure carries no
+findings at all. It is written once per `(observation, challenger)` and the
+private renderer reads only these captured artifacts, never mutable PR refs.
+
 ## `CodeRabbitSnapshot`
 
 Normalized CodeRabbit findings plus the exact `head_sha` that CodeRabbit

@@ -7,7 +7,9 @@ from threading import Lock
 from time import monotonic
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from benchmark.models import Finding
 
 from .observations import LivePRSnapshot
 
@@ -23,6 +25,34 @@ class LiveChallengerAttempt(BaseModel):
     state: Literal["succeeded", "failed"]
     duration_seconds: float = Field(ge=0.0)
     error: str | None = None
+
+
+class LiveChallengerResult(BaseModel):
+    """One terminal attempt with findings, or an explicit failure without them."""
+
+    model_config = ConfigDict(frozen=True)
+
+    attempt: LiveChallengerAttempt
+    findings: tuple[Finding, ...] | None = None
+
+    @model_validator(mode="after")
+    def _findings_match_the_terminal_attempt(self) -> LiveChallengerResult:
+        if self.attempt.state == "succeeded" and self.findings is None:
+            raise ValueError("A successful challenger attempt requires findings, including an empty set")
+        if self.attempt.state == "failed" and self.findings is not None:
+            raise ValueError("A failed challenger attempt cannot be represented as an empty review")
+        if self.findings and any(finding.tool != self.attempt.challenger for finding in self.findings):
+            raise ValueError("Challenger findings must belong to the attempt's challenger")
+        return self
+
+
+class ChallengerResultRecordResult(BaseModel):
+    """Whether a challenger result was new or an idempotent replay."""
+
+    model_config = ConfigDict(frozen=True)
+
+    result: LiveChallengerResult
+    created: bool
 
 
 class LiveChallengerScheduler:

@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from benchmark.models import Finding
+
+if TYPE_CHECKING:
+    from .scheduler import ChallengerResultRecordResult, LiveChallengerResult
 
 
 class LivePRSnapshot(BaseModel):
@@ -134,6 +137,53 @@ class LiveObservationStore:
     def coderabbit_path(self, snapshot: LivePRSnapshot) -> Path:
         """Return the private, immutable CodeRabbit artifact location for a snapshot."""
         return self._path_for(snapshot).with_suffix(".coderabbit.json")
+
+    def load_coderabbit_snapshot(self, observation: LivePRSnapshot) -> CodeRabbitSnapshot | None:
+        """Load the captured CodeRabbit baseline for this immutable observation."""
+        source = self.coderabbit_path(observation)
+        if not source.is_file():
+            return None
+        return CodeRabbitSnapshot.model_validate_json(source.read_text())
+
+    def record_challenger_result(
+        self, observation: LivePRSnapshot, result: LiveChallengerResult
+    ) -> ChallengerResultRecordResult:
+        """Persist a challenger terminal result only for the exact immutable revision."""
+        from .scheduler import ChallengerResultRecordResult, LiveChallengerResult
+
+        attempt = result.attempt
+        if attempt.base_sha != observation.base_sha or attempt.head_sha != observation.head_sha:
+            raise ValueError("Challenger attempt SHA pair does not match the observation")
+        if attempt.challenger not in {"gito", "pr-agent"}:
+            raise ValueError("Unknown live challenger")
+        self.record(observation)
+        destination = self.challenger_path(observation, attempt.challenger)
+        try:
+            with destination.open("x") as output:
+                output.write(result.model_dump_json(indent=2) + "\n")
+        except FileExistsError:
+            return ChallengerResultRecordResult(
+                result=LiveChallengerResult.model_validate_json(destination.read_text()),
+                created=False,
+            )
+        return ChallengerResultRecordResult(result=result, created=True)
+
+    def challenger_path(self, snapshot: LivePRSnapshot, challenger: str) -> Path:
+        """Return the private, immutable artifact path for one recognized challenger."""
+        if challenger not in {"gito", "pr-agent"}:
+            raise ValueError("Unknown live challenger")
+        return self._path_for(snapshot).with_suffix(f".{challenger}.json")
+
+    def load_challenger_result(
+        self, observation: LivePRSnapshot, challenger: str
+    ) -> LiveChallengerResult | None:
+        """Load one persisted terminal challenger result for this immutable observation."""
+        from .scheduler import LiveChallengerResult
+
+        source = self.challenger_path(observation, challenger)
+        if not source.is_file():
+            return None
+        return LiveChallengerResult.model_validate_json(source.read_text())
 
     def _path_for(self, snapshot: LivePRSnapshot) -> Path:
         repo_slug = snapshot.repository.replace("/", "__")
