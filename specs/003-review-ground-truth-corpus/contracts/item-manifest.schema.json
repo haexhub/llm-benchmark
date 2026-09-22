@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewCorpusItemManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "partition", "kind", "source", "approval_ref", "bundle_sha256", "base_sha", "head_sha", "language", "diff_size_bucket", "difficulty"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"},
+    "partition": {"enum": ["development", "calibration", "holdout"]},
+    "kind": {"enum": ["clean", "seeded"]},
+    "source": {"enum": ["public", "internal_deidentified", "synthetic"]},
+    "approval_ref": {"type": "string", "minLength": 1},
+    "bundle_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "base_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "language": {"enum": ["python", "typescript"]},
+    "diff_size_bucket": {"enum": ["small", "medium", "large"]},
+    "difficulty": {"enum": ["easy", "medium", "hard"]}
+  }
+}

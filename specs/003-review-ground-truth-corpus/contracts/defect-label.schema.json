@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProtectedDefectLabel",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "category", "severity", "affected_scope", "impact", "reproducer_id", "approval"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^def-[a-z0-9-]{3,60}$"},
+    "category": {"enum": ["correctness", "security", "performance", "error_handling", "testing", "configuration"]},
+    "severity": {"enum": ["critical", "major", "minor"]},
+    "affected_scope": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["file"], "properties": {"file": {"type": "string"}, "line_start": {"type": "integer", "minimum": 1}, "line_end": {"type": "integer", "minimum": 1}}}},
+    "impact": {"type": "string", "minLength": 1},
+    "reproducer_id": {"type": "string", "minLength": 1},
+    "approval": {"type": "object", "required": ["reviewer_count", "state"], "properties": {"reviewer_count": {"type": "integer", "minimum": 2}, "state": {"enum": ["approved", "adjudicated"]}}}
+  }
+}

@@ -11,9 +11,12 @@ import typer
 from rich.console import Console
 
 from benchmark.config import env, load_env, load_repos
+from benchmark.corpus import CorpusValidationError, validate_public_corpus
 from benchmark.logging_setup import setup_logging
 
 app = typer.Typer(no_args_is_help=True, help="PR-Review Benchmark CLI.")
+corpus_app = typer.Typer(no_args_is_help=True, help="Benchmark-Corpus verwalten und prüfen.")
+app.add_typer(corpus_app, name="corpus")
 console = Console()
 log = logging.getLogger("benchmark")
 
@@ -31,6 +34,19 @@ def main(
 
 
 _ctx: dict = {}
+
+
+@corpus_app.command("validate")
+def validate_corpus(
+    corpus_dir: Annotated[Path, typer.Argument(help="Pfad zu einem öffentlichen Corpus-Suite-Verzeichnis.")],
+) -> None:
+    """Prüft, ob ein öffentlicher Review-Corpus vollständig und reproduzierbar ist."""
+    try:
+        report = validate_public_corpus(corpus_dir)
+    except CorpusValidationError as error:
+        console.print(f"[red]Corpus validation failed:[/red] {error}")
+        raise typer.Exit(1) from error
+    console.print(f"[green]Validated {report.item_count} public corpus item(s).[/green]")
 
 
 def _print_check(label: str, ok: bool, detail: str = "") -> None:
