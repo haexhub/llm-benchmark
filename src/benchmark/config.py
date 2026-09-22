@@ -7,7 +7,7 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from benchmark.models import RepoConfig
+from benchmark.models import LiveRepositoryIntegration, RepoConfig
 
 
 class EnvConfigError(RuntimeError):
@@ -16,6 +16,7 @@ class EnvConfigError(RuntimeError):
 
 class ReposFile(BaseModel):
     repos: list[RepoConfig]
+    live_repositories: list[LiveRepositoryIntegration] = []
 
 
 def load_env(path: Path | None = None) -> None:
@@ -51,6 +52,18 @@ def load_repos(path: Path | None = None) -> list[RepoConfig]:
         raw = yaml.safe_load(fh) or {}
     parsed = ReposFile.model_validate(raw)
     return parsed.repos
+
+
+def load_live_repositories(path: Path | None = None) -> list[LiveRepositoryIntegration]:
+    """Load only repositories whose shadow-review opt-in is explicitly enabled."""
+    if path is None:
+        path = _project_root() / "config" / "repos.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"repos config not found: {path}")
+    with path.open() as fh:
+        raw = yaml.safe_load(fh) or {}
+    parsed = ReposFile.model_validate(raw)
+    return [integration for integration in parsed.live_repositories if integration.enabled]
 
 
 def _project_root() -> Path:

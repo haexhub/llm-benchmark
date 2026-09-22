@@ -34,3 +34,21 @@ def test_run_gito_on_pr_passes_absolute_out_path(monkeypatch, tmp_path: Path) ->
     out_idx = cmd.index("--out") + 1
     assert Path(cmd[out_idx]).is_absolute()
     assert Path(cmd[out_idx]) == (tmp_path / out_dir).resolve()
+
+
+def test_run_gito_on_pr_fetches_the_pinned_head_sha(monkeypatch, tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_cli(cmd, *, timeout, env=None, cwd=None):
+        calls.append(cmd)
+        from benchmark.tools.base import RunResult
+
+        return RunResult(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(gito, "run_cli", fake_run_cli)
+    head_sha = "b" * 40
+    gito.run_gito_on_pr("owner", "repo", 1, "a" * 40, head_sha, tmp_path / "clone", tmp_path / "out")
+
+    fetch_command = calls[1]
+    assert f"{head_sha}:pr-1-head" in fetch_command
+    assert "refs/pull/1/head" not in fetch_command

@@ -109,7 +109,7 @@ def _run_gito(repo: RepoConfig, pr: int, base: Path, target: Path) -> None:
     clone_dir = base / "gito-clone"
     out_dir = base / "gito-workdir"
     result = run_gito_on_pr(
-        repo.owner, repo.name, pr, refs["base_sha"], refs["head_ref"], clone_dir, out_dir,
+        repo.owner, repo.name, pr, refs["base_sha"], refs["head_sha"], clone_dir, out_dir,
         timeout=TOOL_TIMEOUT_SECONDS,
     )
     if not result.ok:

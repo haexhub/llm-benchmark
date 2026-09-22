@@ -68,6 +68,24 @@ class LiveObservationStore:
             return ObservationRecordResult(observation=self._load(destination), created=False)
         return ObservationRecordResult(observation=observation, created=True)
 
+    def record_with_diff(self, snapshot: LivePRSnapshot, diff: str) -> ObservationRecordResult:
+        """Persist a diff only when it matches the snapshot's immutable digest."""
+        actual_digest = hashlib.sha256(diff.encode()).hexdigest()
+        if actual_digest != snapshot.diff_sha256:
+            raise ValueError("Diff content does not match snapshot diff_sha256")
+        result = self.record(snapshot)
+        destination = self.diff_path(snapshot)
+        if result.created:
+            with destination.open("x") as output:
+                output.write(diff)
+        elif not destination.is_file() or hashlib.sha256(destination.read_bytes()).hexdigest() != actual_digest:
+            raise ValueError("Existing observation has no matching immutable diff artifact")
+        return result
+
+    def diff_path(self, snapshot: LivePRSnapshot) -> Path:
+        """Return the private, immutable patch artifact location for a snapshot."""
+        return self._path_for(snapshot).with_suffix(".patch")
+
     def _path_for(self, snapshot: LivePRSnapshot) -> Path:
         repo_slug = snapshot.repository.replace("/", "__")
         revision = f"{snapshot.base_sha}__{snapshot.head_sha}"

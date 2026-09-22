@@ -10,13 +10,17 @@ import httpx
 import typer
 from rich.console import Console
 
-from benchmark.config import env, load_env, load_repos
+from benchmark.config import env, load_env, load_live_repositories, load_repos
 from benchmark.corpus import CorpusValidationError, validate_public_corpus
+from benchmark.github.fetch import fetch_diff_for_refs, fetch_pr_refs
+from benchmark.live import LiveObservationStore, LivePRIngestor
 from benchmark.logging_setup import setup_logging
 
 app = typer.Typer(no_args_is_help=True, help="PR-Review Benchmark CLI.")
 corpus_app = typer.Typer(no_args_is_help=True, help="Benchmark-Corpus verwalten und prüfen.")
+live_app = typer.Typer(no_args_is_help=True, help="Private Live-PR-Shadow-Reviews verwalten.")
 app.add_typer(corpus_app, name="corpus")
+app.add_typer(live_app, name="live")
 console = Console()
 log = logging.getLogger("benchmark")
 
@@ -47,6 +51,33 @@ def validate_corpus(
         console.print(f"[red]Corpus validation failed:[/red] {error}")
         raise typer.Exit(1) from error
     console.print(f"[green]Validated {report.item_count} public corpus item(s).[/green]")
+
+
+@live_app.command("ingest")
+def ingest_live_pr(
+    repo: Annotated[str, typer.Option(help="Opt-in-Repository als owner/name.")],
+    pr: Annotated[int, typer.Option(help="PR-Nummer.")],
+) -> None:
+    """Erfasst einen PR als unveränderlichen, privaten Live-Shadow-Snapshot."""
+    config_path = _ctx.get("config") or Path("config/repos.yaml")
+    integration = next(
+        (item for item in load_live_repositories(config_path) if item.slug == repo), None
+    )
+    if integration is None:
+        console.print(f"[red]No enabled live integration for {repo}.[/red]")
+        raise typer.Exit(1)
+    ingestor = LivePRIngestor(
+        LiveObservationStore(_ctx["runs_dir"] / "live"),
+        fetch_refs=fetch_pr_refs,
+        fetch_diff=fetch_diff_for_refs,
+    )
+    recorded = ingestor.ingest(integration, pr)
+    action = "Created" if recorded.created else "Reused"
+    snapshot = recorded.observation.snapshot
+    console.print(
+        f"[green]{action} live observation[/green] {repo}#{pr} "
+        f"{snapshot.base_sha[:12]}...{snapshot.head_sha[:12]}"
+    )
 
 
 def _print_check(label: str, ok: bool, detail: str = "") -> None:

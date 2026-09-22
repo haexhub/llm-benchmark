@@ -10,3 +10,11 @@ repos:
   - owner: haexmas
     name: holzi
     pr_numbers: [27]
+
+# Dauerhafte, private Shadow-Reviews. Die Legacy-PR-Liste oben bleibt nur für
+# manuelle Diagnose-Runs; diese explizite Liste steuert GitHub-Event-Intake.
+live_repositories:
+  - owner: haexmas
+    name: holzi
+    enabled: true
+    baseline_wait_minutes: 30

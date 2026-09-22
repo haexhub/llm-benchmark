@@ -4,8 +4,8 @@
 - [x] T002 Add idempotent filesystem observation store.
 - [x] T003 Add serialized in-process challenger scheduler and regression test.
 - [x] T004 Remove parallel local execution from the legacy CLI path.
-- [ ] T005 Add explicit repository live opt-in configuration.
-- [ ] T006 Capture immutable Base/Head diff artifacts at event intake.
+- [x] T005 Add explicit repository live opt-in configuration.
+- [x] T006 Capture immutable Base/Head diff artifacts at event intake.
 - [ ] T007 Capture CodeRabbit snapshots only for the matching Head SHA.
 - [ ] T008 Persist challenger findings/attempts and render private three-way view.
 - [ ] T009 Add GitHub webhook/event adapter and supersession tests.
