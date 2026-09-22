@@ -1,7 +1,6 @@
 """High-level pipeline: iterate (Repo, PR) combos through fetch → run → match → report."""
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import logging
 from collections.abc import Iterable
@@ -95,20 +94,14 @@ def do_run(repos: list[RepoConfig], runs_dir: Path, *, force: bool, active_repo:
         if not tasks:
             continue
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
-            futures = {ex.submit(fn): name for name, fn in tasks.items()}
-            # as_completed (not futures.items()) so a fast failure is logged
-            # immediately instead of waiting behind a slower sibling task —
-            # gito can take 10x longer than pr-agent for the same PR, and
-            # iterating in submission order would delay (or on external kill,
-            # lose) a fast task's failed.log entry until gito's turn came up.
-            for fut in concurrent.futures.as_completed(futures):
-                name = futures[fut]
-                try:
-                    fut.result()
-                    log.info("%s completed for %s#%d", name, repo.slug, pr)
-                except Exception as exc:  # noqa: BLE001
-                    _log_fail(base, f"run:{name}", exc)
+        # Both adapters use the shared local model endpoint. Running them in
+        # parallel oversubscribes the one-GPU profile and invalidates timings.
+        for name, task in tasks.items():
+            try:
+                task()
+                log.info("%s completed for %s#%d", name, repo.slug, pr)
+            except Exception as exc:  # noqa: BLE001
+                _log_fail(base, f"run:{name}", exc)
 
 
 def _run_gito(repo: RepoConfig, pr: int, base: Path, target: Path) -> None:

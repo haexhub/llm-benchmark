@@ -1,12 +1,12 @@
 <!-- SPECKIT START -->
-Current active feature: `specs/003-review-ground-truth-corpus/`
+Current active feature: `specs/004-live-pr-shadow-review/`
 
-- Spec: `specs/003-review-ground-truth-corpus/spec.md`
-- Plan: `specs/003-review-ground-truth-corpus/plan.md`
-- Research: `specs/003-review-ground-truth-corpus/research.md`
-- Data Model: `specs/003-review-ground-truth-corpus/data-model.md`
-- Contracts: `specs/003-review-ground-truth-corpus/contracts/`
-- Quickstart: `specs/003-review-ground-truth-corpus/quickstart.md`
+- Spec: `specs/004-live-pr-shadow-review/spec.md`
+- Plan: to be created
+- Research: to be created
+- Data Model: to be created
+- Contracts: to be created
+- Quickstart: to be created
 
 Read the plan first. `002-benchmark-platform` contains the shared constitution
 and contracts. The existing `001-pr-review-benchmark` remains the historical

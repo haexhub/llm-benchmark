@@ -1,0 +1,31 @@
+# Data Model: Live PR Shadow Review
+
+## `RepositoryIntegration`
+
+Explicit opt-in for `owner/name`, baseline provider, baseline wait policy and
+private publication policy. No repository is live-enabled by inference.
+
+## `LivePRSnapshot`
+
+Immutable `repository`, `pr_number`, `base_sha`, `head_sha` and `diff_sha256`.
+The tuple `(repository, pr_number, base_sha, head_sha)` is the observation key.
+The captured diff artifact is addressed by its digest and is never refreshed for
+an existing observation.
+
+## `LivePRObservation`
+
+One operational-only record for a snapshot. Its revision identity never changes;
+its lifecycle is `queued`, `running_challengers`, `complete`,
+`baseline_incomplete` or `challenger_failed`. It is not a Corpus item and cannot
+produce a Gold score.
+
+## `LiveChallengerAttempt`
+
+One gito or PR-Agent execution with copied Base/Head SHA, terminal state,
+duration and error. Failures are records, not zero findings.
+
+## Storage boundary
+
+The initial store is append-only filesystem state for testable idempotency. A
+later control-plane feature migrates it to PostgreSQL/objects without changing
+the snapshot identity or serial-execution contract.
