@@ -13,6 +13,10 @@ and coding scores numerically.
   action), severity calibration, redundancy and attention burden. Blind frontier
   judges score only the rubric's communication/actionability dimensions; they
   never become the sole truth for correctness.
+- **Review v1 useful-high-value KPI**: a primary `matched` finding with
+  actionability `2`, calibrated severity and no redundancy. Report its count
+  and count divided by the sum of assessed attention-cost units; do not replace
+  recall, precision or actual token/time telemetry with this KPI.
 - **Coding primary metrics**: hidden acceptance/regression pass rate, completion
   rate and permitted partial test score.
 - **Operational metrics**: queue wait, setup, runner and evaluator p50/p95,

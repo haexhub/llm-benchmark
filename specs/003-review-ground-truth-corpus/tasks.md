@@ -18,8 +18,8 @@
 
 - [ ] T009 Create approved synthetic Python and TypeScript pilot fixture pairs.
 - [ ] T010 Create protected Gold labels, reproducers and two-reviewer records.
-- [ ] T011 Add finding mapping outcomes and usefulness-assessment persistence.
-- [ ] T012 [P] Test matched, duplicate, false-positive, insufficient-evidence and
+- [x] T011 Add finding mapping outcomes and usefulness-assessment persistence.
+- [x] T012 [P] Test matched, duplicate, false-positive, insufficient-evidence and
   unmatched-Gold outcomes.
 - [ ] T013 Render coverage and validation reports; show missing strata.
 
