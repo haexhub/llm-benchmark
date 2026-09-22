@@ -20,7 +20,7 @@ SuiteVersion and ResourceLease terms.
 
 - [ ] T006 Create `003-review-ground-truth-corpus` through SpecKit.
 - [ ] T007 Specify fixture visibility, label/reproducer validation and
-  two-reviewer adjudication.
+  auditable curator approval.
 - [ ] T008 Build the small stratified v1 corpus including clean controls.
 
 ## Phase 3: Run Engine (next feature)

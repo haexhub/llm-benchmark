@@ -25,7 +25,7 @@ paths.
 corpus-oracle/<suite>/<version>/<item-id>/
   ground-truth.yaml                  # DefectLabel list
   reproducers/<defect-id>/            # deterministic executable evidence
-  approvals.yaml                      # two reviewers/adjudication
+  approvals.yaml                      # auditable curator self-review/adjudication
   reference/                          # optional reference evidence/fix
   curator-notes.md
 ```

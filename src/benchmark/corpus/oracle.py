@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .validator import CorpusValidationError
 
@@ -22,12 +22,33 @@ class AffectedScope(BaseModel):
 
 
 class LabelApproval(BaseModel):
-    """The independent review record required for decision-grade Gold labels."""
+    """Auditable curator ownership of a protected Gold label."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    reviewer_count: Annotated[int, Field(ge=2)]
-    state: Literal["approved", "adjudicated"]
+    reviewer_count: Annotated[int, Field(ge=0)]
+    state: Literal["pending", "self_reviewed", "approved", "adjudicated"]
+    curator_id: Annotated[str | None, Field(min_length=1)] = None
+    reviewed_at: Annotated[str | None, Field(min_length=1)] = None
+    evidence_digest: Annotated[str | None, Field(pattern=r"^[0-9a-f]{64}$")] = None
+
+    @model_validator(mode="after")
+    def _self_review_has_audit_trail(self) -> LabelApproval:
+        audit_fields = (self.curator_id, self.reviewed_at, self.evidence_digest)
+        if self.state == "pending" and self.reviewer_count != 0:
+            raise ValueError("pending labels must have reviewer_count 0")
+        if self.state == "self_reviewed" and (
+            self.reviewer_count != 1 or any(field is None for field in audit_fields)
+        ):
+            raise ValueError(
+                "self_reviewed labels require one curator plus reviewed_at and evidence_digest"
+            )
+        return self
+
+    @property
+    def decision_ready(self) -> bool:
+        """Whether the label may participate in an official scorecard."""
+        return self.state in {"self_reviewed", "approved", "adjudicated"}
 
 
 class ProtectedDefectLabel(BaseModel):

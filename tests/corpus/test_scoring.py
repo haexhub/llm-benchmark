@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from benchmark.corpus import (
+    CorpusValidationError,
     FindingAssessment,
     ProtectedDefectLabel,
     UsefulnessAssessment,
@@ -149,3 +150,18 @@ def test_reports_useful_high_value_findings_per_attention_unit() -> None:
     assert scorecard.useful_high_value_count == 1
     assert scorecard.attention_cost_total == 4
     assert scorecard.useful_high_value_per_attention_unit == 0.25
+
+
+def test_refuses_to_score_a_pending_gold_label() -> None:
+    pending_defect = ProtectedDefectLabel(
+        id="def-page-size-zero",
+        category="correctness",
+        severity="minor",
+        affected_scope=[{"file": "src/paging.py"}],
+        impact="Zero violates the pagination contract.",
+        reproducer_id="rejects-zero-page-size",
+        approval={"reviewer_count": 0, "state": "pending"},
+    )
+
+    with pytest.raises(CorpusValidationError, match="not decision-ready"):
+        build_review_scorecard([pending_defect], [], reviewed_item_count=1)

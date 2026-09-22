@@ -51,6 +51,9 @@ def build_review_scorecard(
     """Build category scorecards without collapsing them into a rank."""
     if reviewed_item_count <= 0:
         raise CorpusValidationError("reviewed_item_count must be positive")
+    pending_labels = [defect.id for defect in gold_defects if not defect.approval.decision_ready]
+    if pending_labels:
+        raise CorpusValidationError(f"Gold labels are not decision-ready: {pending_labels}")
     gold_by_id = {defect.id: defect for defect in gold_defects}
     if len(gold_by_id) != len(gold_defects):
         raise CorpusValidationError("Gold defect IDs must be unique")

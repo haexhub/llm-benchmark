@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -166,6 +167,34 @@ def test_validates_an_approved_protected_defect_label(tmp_path: Path) -> None:
     label = validate_protected_defect_label(label_file)
 
     assert label.id == "def-page-size-zero"
+
+
+def test_validates_a_single_curator_gold_label_with_auditable_evidence(tmp_path: Path) -> None:
+    label_file = tmp_path / "ground-truth.yaml"
+    label_file.write_text(
+        yaml.safe_dump(
+            {
+                "id": "def-page-size-zero",
+                "category": "correctness",
+                "severity": "minor",
+                "affected_scope": [{"file": "src/paging.py", "line_start": 3, "line_end": 4}],
+                "impact": "A zero page size violates the public API contract.",
+                "reproducer_id": "rejects-zero-page-size",
+                "approval": {
+                    "reviewer_count": 1,
+                    "state": "self_reviewed",
+                    "curator_id": "operator",
+                    "reviewed_at": datetime(2026, 9, 22, tzinfo=UTC).isoformat(),
+                    "evidence_digest": "a" * 64,
+                },
+            },
+            sort_keys=False,
+        )
+    )
+
+    label = validate_protected_defect_label(label_file)
+
+    assert label.approval.state == "self_reviewed"
 
 
 def test_cli_validates_a_public_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

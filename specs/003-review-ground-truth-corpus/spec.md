@@ -155,8 +155,9 @@ results remain reproducible but future decision-grade reports exclude it.
   notes MUST be physically excluded from all runner worktrees, archives, Git
   object access and process environments.
 - **FR-005**: Every Gold defect MUST have opaque ID, category, gold severity,
-  affected scope, impact rationale, executable reproducer, provenance and
-  two-reviewer approval or recorded adjudication.
+  affected scope, impact rationale, executable reproducer, provenance and an
+  auditable curator self-review (curator ID, timestamp and evidence digest) or
+  recorded adjudication.
 - **FR-006**: The corpus validator MUST verify revision integrity, content
   digests, public/protected separation, label uniqueness, scope consistency and
   deterministic reproducer outcome.
@@ -222,7 +223,7 @@ results remain reproducible but future decision-grade reports exclude it.
   store/repository, separate from public runner inputs and artifact mounts.
 - The first v1 release may initially favor synthetic and approved de-identified
   fixtures while the team builds provenance/reviewer processes for real history.
-- Curators are available to provide two independent label reviews and adjudicate
-  disagreements; no LLM judge is a substitute for that ownership.
+- A single curator owns Gold-label review and records their ID, timestamp and
+  evidence digest; no LLM judge is a substitute for that ownership.
 - The later Run Engine supplies fresh worktrees and an Artifact store; this
   feature specifies corpus contracts and validation before large-scale execution.

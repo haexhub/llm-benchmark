@@ -17,7 +17,7 @@
 ## Phase 3: Pilot Fixtures and Evaluation
 
 - [ ] T009 Create approved synthetic Python and TypeScript pilot fixture pairs.
-- [ ] T010 Create protected Gold labels, reproducers and two-reviewer records.
+- [ ] T010 Create protected Gold labels, reproducers and auditable curator records.
 - [x] T011 Add finding mapping outcomes and usefulness-assessment persistence.
 - [x] T012 [P] Test matched, duplicate, false-positive, insufficient-evidence and
   unmatched-Gold outcomes.

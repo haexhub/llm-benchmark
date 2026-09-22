@@ -25,7 +25,7 @@ contamination review; current public repository must not receive private code.
 | Principle | Compliance |
 |---|---|
 | Immutable provenance | Base/Head SHA, content and environment digests are required. |
-| Independent Ground Truth | Oracle labels/reproducers and two-reviewer approval are required. |
+| Independent Ground Truth | Oracle labels/reproducers remain independent from candidates; an auditable single-curator self-review is required. |
 | Equal isolation | Oracle is physically absent from all runner inputs. |
 | Transparent scores | Gold correctness and usefulness rubric are separately persisted. |
 | Secure operation | Internal source/Oracle require protected storage and scoped credentials. |
