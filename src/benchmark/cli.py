@@ -3,15 +3,26 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+from hashlib import sha256
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Annotated
 
 import httpx
 import typer
+import yaml
 from rich.console import Console
 
 from benchmark.config import env, load_env, load_live_repositories, load_repos
-from benchmark.corpus import CorpusValidationError, validate_public_corpus
+from benchmark.corpus import (
+    CorpusValidationError,
+    materialize_review_input,
+    record_curator_approval,
+    validate_defect_label_scope,
+    validate_protected_defect_label,
+    validate_public_corpus,
+    verify_reproducer_determinism,
+)
 from benchmark.github.fetch import fetch_diff_for_refs, fetch_pr_refs
 from benchmark.live import LiveObservationStore, LivePRIngestor, LivePRSnapshot
 from benchmark.logging_setup import setup_logging
@@ -52,6 +63,82 @@ def validate_corpus(
         console.print(f"[red]Corpus validation failed:[/red] {error}")
         raise typer.Exit(1) from error
     console.print(f"[green]Validated {report.item_count} public corpus item(s).[/green]")
+
+
+@corpus_app.command("approve-label")
+def approve_label(
+    label_file: Annotated[Path, typer.Argument(help="Pfad zur protected ground-truth.yaml.")],
+    corpus_dir: Annotated[
+        Path, typer.Option("--corpus-dir", help="Pfad zum öffentlichen Corpus-Suite-Verzeichnis.")
+    ],
+    curator_id: Annotated[str, typer.Option(help="ID des Kurators, der diese Freigabe verantwortet.")],
+    runs: Annotated[int, typer.Option(help="Anzahl deterministischer Reproducer-Läufe.")] = 3,
+) -> None:
+    """Läuft den Reproducer mehrfach und trägt bei Erfolg die Curator-Freigabe ein.
+
+    Nur ausführen, nachdem ein Mensch Label, Scope und Reproducer inhaltlich geprüft hat.
+    """
+    label_file = label_file.resolve()
+    try:
+        label = validate_protected_defect_label(label_file)
+    except CorpusValidationError as error:
+        console.print(f"[red]Approval failed: {error}[/red]")
+        raise typer.Exit(1) from error
+    if label.approval.state != "pending":
+        console.print(f"[red]Approval failed: label is already {label.approval.state}[/red]")
+        raise typer.Exit(1)
+    oracle_item_dir = label_file.parent
+    item_id = oracle_item_dir.name
+    reproducer_root = (oracle_item_dir / "reproducers").resolve()
+    reproducer_entry = (reproducer_root / label.reproducer_id).resolve()
+    if reproducer_entry.parent != reproducer_root or reproducer_entry == reproducer_root:
+        console.print("[red]Approval failed: reproducer_id escapes the canonical directory[/red]")
+        raise typer.Exit(1)
+    if reproducer_entry.is_dir():
+        reproducer = reproducer_entry / "reproducer.sh"
+    else:
+        reproducer = reproducer_entry
+    if not reproducer.is_file():
+        console.print(f"[red]Approval failed: missing canonical reproducer: {reproducer}[/red]")
+        raise typer.Exit(1)
+
+    public_item_dir = corpus_dir.resolve() / "items" / item_id
+    with TemporaryDirectory(prefix="benchmark-approval-") as work_directory:
+        try:
+            runner_input = materialize_review_input(
+                corpus_dir, item_id, Path(work_directory) / "runner-input"
+            )
+            manifest = yaml.safe_load(runner_input.manifest_file.read_text())
+            validate_defect_label_scope(
+                public_item_dir / "repo.bundle", manifest["head_sha"], label, item_id
+            )
+            determinism = verify_reproducer_determinism(
+                reproducer, runner_input.head_directory, runs=runs
+            )
+        except CorpusValidationError as error:
+            console.print(f"[red]Reproducer verification failed:[/red] {error}")
+            raise typer.Exit(1) from error
+    if not determinism.deterministic:
+        console.print(
+            f"[red]Reproducer did not pass all {determinism.run_count} isolated runs.[/red]"
+        )
+        raise typer.Exit(1)
+    try:
+        label = record_curator_approval(
+            label_file,
+            curator_id=curator_id,
+            evidence_digest=sha256(
+                f"{item_id}:{manifest['head_sha']}:{label.reproducer_id}:"
+                f"{determinism.evidence_digest}".encode()
+            ).hexdigest(),
+        )
+    except CorpusValidationError as error:
+        console.print(f"[red]Approval failed:[/red] {error}")
+        raise typer.Exit(1) from error
+    console.print(
+        f"[green]{label.id} approved by {curator_id} ({label.approval.state}, "
+        f"{determinism.run_count}/{determinism.run_count} deterministic runs).[/green]"
+    )
 
 
 @live_app.command("ingest")

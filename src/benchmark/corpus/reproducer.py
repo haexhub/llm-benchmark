@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -11,6 +12,15 @@ from tempfile import TemporaryDirectory
 from time import monotonic
 
 from .validator import CorpusValidationError
+
+
+@dataclass(frozen=True)
+class DeterminismResult:
+    """Whether a reproducer passed identically across repeated isolated runs."""
+
+    deterministic: bool
+    run_count: int
+    evidence_digest: str
 
 
 @dataclass(frozen=True)
@@ -80,6 +90,38 @@ def run_protected_reproducer(
         stderr=stderr,
         timed_out=timed_out,
     )
+
+
+def verify_reproducer_determinism(
+    reproducer: Path, fixture_root: Path, *, runs: int = 3
+) -> DeterminismResult:
+    """Run a protected reproducer repeatedly and digest the evidence for curator sign-off."""
+    if runs < 1:
+        raise CorpusValidationError("runs must be at least 1")
+    results = [run_protected_reproducer(reproducer, fixture_root) for _ in range(runs)]
+    evidence = [_evidence_record(result) for result in results]
+    deterministic = all(result["passed"] for result in evidence) and all(
+        result == evidence[0] for result in evidence[1:]
+    )
+    evidence_digest = hashlib.sha256(
+        json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return DeterminismResult(
+        deterministic=deterministic, run_count=runs, evidence_digest=evidence_digest
+    )
+
+
+def _evidence_record(result: ReproducerResult) -> dict[str, object]:
+    """Return the stable outcome fields used to compare repeated executions."""
+    return {
+        "exit_code": result.exit_code,
+        "fixture_sha256": result.fixture_sha256,
+        "network_isolated": result.network_isolated,
+        "passed": result.passed,
+        "stderr": result.stderr,
+        "stdout": result.stdout,
+        "timed_out": result.timed_out,
+    }
 
 
 def _sandbox_command(script_path: Path, fixture_root: Path) -> list[str]:
