@@ -65,6 +65,7 @@ def test_exposes_node_from_a_scoped_toolchain_mount(tmp_path: Path) -> None:
 
 
 def test_verifies_a_deterministic_reproducer_across_repeated_runs(tmp_path: Path) -> None:
+    """Accept identical successful runs and record their evidence digest."""
     fixture_root = tmp_path / "fixture"
     fixture_root.mkdir()
     (fixture_root / "service.py").write_text("def answer() -> int:\n    return 42\n")
@@ -81,6 +82,7 @@ def test_verifies_a_deterministic_reproducer_across_repeated_runs(tmp_path: Path
 def test_flags_a_flaky_reproducer_as_non_deterministic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Reject a reproducer when any repeated run fails."""
     fixture_root = tmp_path / "fixture"
     fixture_root.mkdir()
     reproducer = tmp_path / "reproducer.sh"
@@ -108,6 +110,7 @@ def test_flags_a_flaky_reproducer_as_non_deterministic(
 def test_flags_a_reproducer_with_different_output_as_non_deterministic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Reject runs that succeed but produce inconsistent output."""
     fixture_root = tmp_path / "fixture"
     fixture_root.mkdir()
     reproducer = tmp_path / "reproducer.sh"

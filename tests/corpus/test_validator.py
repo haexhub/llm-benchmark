@@ -363,6 +363,7 @@ def test_validates_a_single_curator_gold_label_with_auditable_evidence(tmp_path:
 
 
 def _demo_label(**overrides: object) -> ProtectedDefectLabel:
+    """Build a valid pending label with optional field overrides."""
     fields = {
         "id": "def-page-size-zero",
         "category": "correctness",
@@ -377,11 +378,13 @@ def _demo_label(**overrides: object) -> ProtectedDefectLabel:
 
 
 def test_rejects_an_affected_scope_with_line_start_after_line_end() -> None:
+    """Reject an affected scope with reversed line bounds."""
     with pytest.raises(ValueError, match="line_start must not be greater than line_end"):
         _demo_label(affected_scope=[{"file": "service.py", "line_start": 5, "line_end": 1}])
 
 
 def test_validates_a_defect_label_scope_within_the_head_revision(tmp_path: Path) -> None:
+    """Accept an affected scope inside a file at the pinned Head revision."""
     corpus_root = create_valid_corpus(tmp_path)
     item_dir = corpus_root / "items" / "demo-item"
     manifest = yaml.safe_load((item_dir / "manifest.yaml").read_text())
@@ -392,6 +395,7 @@ def test_validates_a_defect_label_scope_within_the_head_revision(tmp_path: Path)
 
 
 def test_rejects_a_defect_label_scope_file_absent_from_head_revision(tmp_path: Path) -> None:
+    """Reject a label that references a file absent from the pinned Head."""
     corpus_root = create_valid_corpus(tmp_path)
     item_dir = corpus_root / "items" / "demo-item"
     manifest = yaml.safe_load((item_dir / "manifest.yaml").read_text())
@@ -402,6 +406,7 @@ def test_rejects_a_defect_label_scope_file_absent_from_head_revision(tmp_path: P
 
 
 def test_rejects_a_defect_label_scope_line_end_beyond_file_length(tmp_path: Path) -> None:
+    """Reject an ending line beyond the pinned Head file length."""
     corpus_root = create_valid_corpus(tmp_path)
     item_dir = corpus_root / "items" / "demo-item"
     manifest = yaml.safe_load((item_dir / "manifest.yaml").read_text())
@@ -412,6 +417,7 @@ def test_rejects_a_defect_label_scope_line_end_beyond_file_length(tmp_path: Path
 
 
 def test_rejects_a_defect_label_scope_line_start_beyond_file_length(tmp_path: Path) -> None:
+    """Reject a starting line beyond the pinned Head file length."""
     corpus_root = create_valid_corpus(tmp_path)
     item_dir = corpus_root / "items" / "demo-item"
     manifest = yaml.safe_load((item_dir / "manifest.yaml").read_text())
@@ -422,6 +428,7 @@ def test_rejects_a_defect_label_scope_line_start_beyond_file_length(tmp_path: Pa
 
 
 def test_records_an_auditable_curator_approval(tmp_path: Path) -> None:
+    """Persist curator identity and evidence with an approvable label."""
     label_file = tmp_path / "ground-truth.yaml"
     label_file.write_text(
         yaml.safe_dump(

@@ -23,6 +23,7 @@ class AffectedScope(BaseModel):
 
     @model_validator(mode="after")
     def _ordered_line_range(self) -> AffectedScope:
+        """Reject a scope whose starting line follows its ending line."""
         if (
             self.line_start is not None
             and self.line_end is not None
