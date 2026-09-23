@@ -41,3 +41,49 @@ live_repositories:
 
     assert result.exit_code == 0, result.output
     assert "Created live observation" in result.output
+
+
+def test_cli_runs_a_live_pr_and_stays_non_terminal_within_the_baseline_wait_window(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = tmp_path / "repos.yaml"
+    config.write_text(
+        """
+repos: []
+live_repositories:
+  - owner: alice
+    name: repo
+    enabled: true
+    baseline_wait_minutes: 30
+"""
+    )
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch(
+            "benchmark.cli.fetch_pr_refs", return_value={"base_sha": "a" * 40, "head_sha": "b" * 40}
+        ),
+        patch("benchmark.cli.fetch_diff_for_refs", return_value="immutable diff\n"),
+        patch("benchmark.github.fetch.fetch_cr_comments", return_value=[]),
+        patch("benchmark.cli._run_live_gito", return_value=[]) as gito,
+        patch("benchmark.cli._run_live_pragent", return_value=[]) as pragent,
+    ):
+        result = CliRunner().invoke(
+            app,
+            [
+                "--config",
+                str(config),
+                "--runs-dir",
+                str(tmp_path / "runs"),
+                "live",
+                "run",
+                "--repo",
+                "alice/repo",
+                "--pr",
+                "1",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "running_challengers" in result.output
+    gito.assert_called_once()
+    pragent.assert_called_once()

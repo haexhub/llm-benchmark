@@ -13,8 +13,9 @@ from rich.console import Console
 from benchmark.config import env, load_env, load_live_repositories, load_repos
 from benchmark.corpus import CorpusValidationError, validate_public_corpus
 from benchmark.github.fetch import fetch_diff_for_refs, fetch_pr_refs
-from benchmark.live import LiveObservationStore, LivePRIngestor
+from benchmark.live import LiveObservationStore, LivePRIngestor, LivePRSnapshot
 from benchmark.logging_setup import setup_logging
+from benchmark.models import Finding
 
 app = typer.Typer(no_args_is_help=True, help="PR-Review Benchmark CLI.")
 corpus_app = typer.Typer(no_args_is_help=True, help="Benchmark-Corpus verwalten und prüfen.")
@@ -77,6 +78,122 @@ def ingest_live_pr(
     console.print(
         f"[green]{action} live observation[/green] {repo}#{pr} "
         f"{snapshot.base_sha[:12]}...{snapshot.head_sha[:12]}"
+    )
+
+
+def _run_live_gito(snapshot: LivePRSnapshot, work_dir: Path, timeout: int) -> list[Finding]:
+    from benchmark.tools.gito import GITO_REPORT_FILENAME, load_gito_findings, run_gito_on_pr
+
+    owner, name = snapshot.repository.split("/", 1)
+    clone_dir = work_dir / "gito-clone"
+    out_dir = work_dir / "gito-workdir"
+    result = run_gito_on_pr(
+        owner, name, snapshot.pr_number, snapshot.base_sha, snapshot.head_sha, clone_dir, out_dir,
+        timeout=timeout,
+    )
+    if not result.ok:
+        raise RuntimeError(f"gito CLI failed rc={result.returncode}: {result.stderr[:400]}")
+    report_path = out_dir / GITO_REPORT_FILENAME
+    if not report_path.exists():
+        raise RuntimeError(
+            f"gito produced no report at {report_path} (rc={result.returncode}); "
+            f"stdout tail: {result.stdout[-400:]!r}; stderr tail: {result.stderr[-400:]!r}"
+        )
+    return load_gito_findings(report_path)
+
+
+def _run_live_pragent(diff_file: Path, work_dir: Path, timeout: int) -> list[Finding]:
+    import json
+
+    from benchmark.tools.pr_agent import parse_pragent_json, run_pragent_on_diff
+
+    raw_out = work_dir / "pr-agent-raw.json"
+    result = run_pragent_on_diff(diff_file, raw_out, timeout=timeout)
+    if not result.ok:
+        raise RuntimeError(f"pr-agent CLI failed rc={result.returncode}: {result.stderr[:400]}")
+    if not raw_out.exists():
+        raise RuntimeError(
+            f"pr-agent produced no JSON output at {raw_out} (rc={result.returncode}); "
+            f"stdout tail: {result.stdout[-400:]!r}; stderr tail: {result.stderr[-400:]!r}"
+        )
+    with raw_out.open() as fh:
+        payload = json.load(fh)
+    return parse_pragent_json(payload)
+
+
+@live_app.command("run")
+def run_live_pr(
+    repo: Annotated[str, typer.Option(help="Opt-in-Repository als owner/name.")],
+    pr: Annotated[int, typer.Option(help="PR-Nummer.")],
+) -> None:
+    """Treibt Ingest, CodeRabbit-Baseline und Challenger-Runs für einen Live-PR voran.
+
+    Idempotent und beliebig oft erneut aufrufbar (z. B. per Cron) — jeder Aufruf
+    erledigt nur noch offene Arbeit und leitet den Lifecycle-State neu her.
+    """
+    import os
+    from datetime import UTC, datetime
+
+    from benchmark.github.fetch import fetch_cr_comments
+    from benchmark.live import (
+        CodeRabbitBaselineCapture,
+        LiveChallengerScheduler,
+        LiveShadowRunner,
+        ResourceUnavailable,
+        SqliteResourceLeaseStore,
+        run_live_shadow_review,
+    )
+    from benchmark.pipeline import TOOL_TIMEOUT_SECONDS
+
+    config_path = _ctx.get("config") or Path("config/repos.yaml")
+    integration = next(
+        (item for item in load_live_repositories(config_path) if item.slug == repo), None
+    )
+    if integration is None:
+        console.print(f"[red]No enabled live integration for {repo}.[/red]")
+        raise typer.Exit(1)
+
+    live_dir = _ctx["runs_dir"] / "live"
+    store = LiveObservationStore(live_dir)
+    ingestor = LivePRIngestor(store, fetch_refs=fetch_pr_refs, fetch_diff=fetch_diff_for_refs)
+
+    def _fetch_cr_comments_for_slug(repository: str, pr_number: int):
+        owner, name = repository.split("/", 1)
+        return fetch_cr_comments(owner, name, pr_number)
+
+    baseline_capture = CodeRabbitBaselineCapture(store, fetch_comments=_fetch_cr_comments_for_slug)
+    lease_store = SqliteResourceLeaseStore(_ctx["runs_dir"] / "run-engine.sqlite3")
+    runner = LiveShadowRunner(
+        store, LiveChallengerScheduler(), lease_store, worker_id=f"live-cli-{os.getpid()}"
+    )
+
+    work_dir = live_dir / "work" / repo.replace("/", "__") / str(pr)
+
+    def _gito(snapshot: LivePRSnapshot) -> list[Finding]:
+        return _run_live_gito(snapshot, work_dir / snapshot.head_sha, TOOL_TIMEOUT_SECONDS)
+
+    def _pragent(snapshot: LivePRSnapshot) -> list[Finding]:
+        return _run_live_pragent(
+            store.diff_path(snapshot), work_dir / snapshot.head_sha, TOOL_TIMEOUT_SECONDS
+        )
+
+    try:
+        observation = run_live_shadow_review(
+            ingestor,
+            baseline_capture,
+            runner,
+            store,
+            integration,
+            pr,
+            {"gito": _gito, "pr-agent": _pragent},
+            now=datetime.now(UTC),
+        )
+    except ResourceUnavailable as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    console.print(
+        f"[green]{observation.state}[/green] {repo}#{pr} {observation.snapshot.head_sha[:12]}"
     )
 
 
