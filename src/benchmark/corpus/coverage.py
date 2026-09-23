@@ -64,6 +64,7 @@ class CoverageMatrix:
 
     @property
     def clean_ratio(self) -> float:
+        """Return the fraction of items without an Oracle label, or zero for an empty suite."""
         return self.clean_count / self.item_count if self.item_count else 0.0
 
 
@@ -140,6 +141,7 @@ def build_coverage_matrix(corpus_root: Path, oracle_root: Path) -> CoverageMatri
 
 
 def _load_manifest_for_coverage(manifest_file: Path) -> _ManifestOnly:
+    """Read the manifest fields needed for coverage or reject a missing file."""
     if not manifest_file.is_file():
         raise CorpusValidationError(f"Missing manifest: {manifest_file}")
     try:

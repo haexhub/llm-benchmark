@@ -17,12 +17,14 @@ from benchmark.corpus import (
 
 
 def _run_git(*args: str, cwd: Path) -> str:
+    """Run a Git command in the fixture repository and return its output."""
     return subprocess.run(
         ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
     ).stdout.strip()
 
 
 def create_valid_corpus(tmp_path: Path) -> Path:
+    """Create a one-item corpus backed by a two-commit Git bundle."""
     source_repo = tmp_path / "source"
     source_repo.mkdir()
     _run_git("init", "--quiet", "--initial-branch=main", cwd=source_repo)
@@ -86,6 +88,7 @@ def create_valid_corpus(tmp_path: Path) -> Path:
 
 
 def _write_label(oracle_root: Path, item_id: str, **overrides: object) -> None:
+    """Write a pending Oracle label with optional field overrides."""
     fields = {
         "id": f"def-{item_id}",
         "category": "correctness",
@@ -102,6 +105,7 @@ def _write_label(oracle_root: Path, item_id: str, **overrides: object) -> None:
 
 
 def test_reports_a_clean_control_with_no_ground_truth_file(tmp_path: Path) -> None:
+    """Treat an item without a ground-truth file as a clean control."""
     corpus_root = create_valid_corpus(tmp_path)
     oracle_root = tmp_path / "oracle"
     oracle_root.mkdir()
@@ -115,6 +119,7 @@ def test_reports_a_clean_control_with_no_ground_truth_file(tmp_path: Path) -> No
 
 
 def test_counts_a_seeded_item_and_its_label_dimensions(tmp_path: Path) -> None:
+    """Count a seeded item's category, severity, and pending label."""
     corpus_root = create_valid_corpus(tmp_path)
     oracle_root = tmp_path / "oracle"
     _write_label(oracle_root, "demo-item", category="security", severity="critical")
@@ -130,6 +135,7 @@ def test_counts_a_seeded_item_and_its_label_dimensions(tmp_path: Path) -> None:
 
 
 def test_lists_zero_count_strata_as_missing(tmp_path: Path) -> None:
+    """List absent expected strata without listing populated ones."""
     corpus_root = create_valid_corpus(tmp_path)
     oracle_root = tmp_path / "oracle"
     oracle_root.mkdir()
@@ -176,6 +182,7 @@ def test_converts_invalid_manifest_to_corpus_validation_error(
 
 
 def test_cli_renders_a_coverage_report(tmp_path: Path, monkeypatch) -> None:
+    """Render corpus item counts from the coverage CLI command."""
     monkeypatch.chdir(tmp_path)
     corpus_root = create_valid_corpus(tmp_path)
     oracle_root = tmp_path / "oracle"
