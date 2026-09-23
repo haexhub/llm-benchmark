@@ -8,6 +8,7 @@ from .assessment import (
     load_assessments,
     save_assessments,
 )
+from .coverage import CoverageMatrix, build_coverage_matrix
 from .oracle import (
     ProtectedDefectLabel,
     record_curator_approval,
@@ -34,7 +35,9 @@ __all__ = [
     "AssessmentDecision",
     "CorpusValidationError",
     "CorpusValidationReport",
+    "CoverageMatrix",
     "DeterminismResult",
+    "build_coverage_matrix",
     "FindingAssessment",
     "RunnerInput",
     "UsefulnessAssessment",
