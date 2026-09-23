@@ -114,7 +114,11 @@ def record_curator_approval(
     label and its reproducer evidence; it is the accountable record of that
     review, not a substitute for it.
     """
-    validate_protected_defect_label(label_file)
+    current = validate_protected_defect_label(label_file)
+    if current.approval.state != "pending":
+        raise CorpusValidationError(
+            f"Cannot approve non-pending label: {label_file}"
+        )
     document = yaml.safe_load(label_file.read_text())
     document["approval"] = {
         "reviewer_count": 1,

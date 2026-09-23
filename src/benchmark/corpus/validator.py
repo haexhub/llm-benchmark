@@ -259,6 +259,23 @@ def read_head_file_line_count(bundle: Path, head_sha: str, file_path: str, item_
     with TemporaryDirectory(prefix="benchmark-corpus-") as checkout_directory:
         checkout = Path(checkout_directory) / "repo"
         _run_git("clone", "--quiet", str(bundle), str(checkout), item_id=item_id)
+        tree = subprocess.run(
+            ["git", "ls-tree", "-z", "-r", "--full-tree", head_sha, "--", file_path],
+            cwd=checkout,
+            capture_output=True,
+            check=False,
+        )
+        entries = [entry for entry in tree.stdout.split(b"\0") if entry]
+        file_path_bytes = file_path.encode()
+        matching_entry = next(
+            (entry for entry in entries if entry.partition(b"\t")[2] == file_path_bytes),
+            None,
+        )
+        if tree.returncode or matching_entry is None:
+            return None
+        header = matching_entry.partition(b"\t")[0].split()
+        if len(header) != 3 or header[0] not in {b"100644", b"100755"} or header[1] != b"blob":
+            return None
         result = subprocess.run(
             ["git", "show", f"{head_sha}:{file_path}"],
             cwd=checkout,

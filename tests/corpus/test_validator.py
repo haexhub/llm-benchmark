@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from benchmark.cli import app
 from benchmark.corpus import (
     CorpusValidationError,
+    DeterminismResult,
     compute_suite_content_digest,
     materialize_review_input,
     record_curator_approval,
@@ -20,6 +21,7 @@ from benchmark.corpus import (
     validate_public_corpus,
 )
 from benchmark.corpus.oracle import ProtectedDefectLabel
+from benchmark.corpus.validator import read_head_file_line_count
 
 
 def run_git(*args: str, cwd: Path) -> str:
@@ -427,6 +429,16 @@ def test_rejects_a_defect_label_scope_line_start_beyond_file_length(tmp_path: Pa
         validate_defect_label_scope(item_dir / "repo.bundle", manifest["head_sha"], label, "demo-item")
 
 
+def test_rejects_a_directory_as_a_defect_label_scope_file(tmp_path: Path) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    item_dir = corpus_root / "items" / "demo-item"
+    manifest = yaml.safe_load((item_dir / "manifest.yaml").read_text())
+
+    assert read_head_file_line_count(
+        item_dir / "repo.bundle", manifest["head_sha"], ".", "demo-item"
+    ) is None
+
+
 def test_records_an_auditable_curator_approval(tmp_path: Path) -> None:
     """Persist curator identity and evidence with an approvable label."""
     label_file = tmp_path / "ground-truth.yaml"
@@ -452,6 +464,120 @@ def test_records_an_auditable_curator_approval(tmp_path: Path) -> None:
     assert label.approval.decision_ready is True
     reloaded = validate_protected_defect_label(label_file)
     assert reloaded.approval.evidence_digest == "a" * 64
+
+
+def test_rejects_overwriting_an_existing_curator_approval(tmp_path: Path) -> None:
+    label_file = tmp_path / "ground-truth.yaml"
+    label_file.write_text(
+        yaml.safe_dump(
+            {
+                "id": "def-page-size-zero",
+                "category": "correctness",
+                "severity": "minor",
+                "affected_scope": [{"file": "src/paging.py", "line_start": 3}],
+                "impact": "A zero page size violates the public API contract.",
+                "reproducer_id": "rejects-zero-page-size",
+                "approval": {
+                    "reviewer_count": 1,
+                    "state": "self_reviewed",
+                    "curator_id": "original-curator",
+                    "reviewed_at": "2026-09-22T00:00:00+00:00",
+                    "evidence_digest": "a" * 64,
+                },
+            },
+            sort_keys=False,
+        )
+    )
+
+    with pytest.raises(CorpusValidationError, match="non-pending"):
+        record_curator_approval(label_file, curator_id="haex", evidence_digest="b" * 64)
+
+    assert validate_protected_defect_label(label_file).approval.curator_id == "original-curator"
+
+
+def _write_pending_label(label_file: Path, *, scope_file: str = "service.py") -> None:
+    reproducer_dir = label_file.parent / "reproducers"
+    reproducer_dir.mkdir(parents=True)
+    (reproducer_dir / "rejects-zero-page-size").write_text("#!/bin/sh\nset -eu\ntrue\n")
+    label_file.write_text(
+        yaml.safe_dump(
+            {
+                "id": "def-page-size-zero",
+                "category": "correctness",
+                "severity": "minor",
+                "affected_scope": [{"file": scope_file, "line_start": 1, "line_end": 2}],
+                "impact": "A zero page size violates the public API contract.",
+                "reproducer_id": "rejects-zero-page-size",
+                "approval": {"reviewer_count": 0, "state": "pending"},
+            },
+            sort_keys=False,
+        )
+    )
+
+
+def test_cli_uses_the_label_item_reproducer_and_head_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    label_file = tmp_path / "corpus-oracle" / "review-v1" / "demo-item" / "ground-truth.yaml"
+    _write_pending_label(label_file)
+    captured: dict[str, Path | int] = {}
+
+    def fake_verify(reproducer: Path, fixture: Path, *, runs: int) -> DeterminismResult:
+        captured.update(reproducer=reproducer, fixture=fixture, runs=runs)
+        return DeterminismResult(deterministic=True, run_count=runs, evidence_digest="a" * 64)
+
+    monkeypatch.setattr("benchmark.cli.verify_reproducer_determinism", fake_verify)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "corpus",
+            "approve-label",
+            str(label_file),
+            "--corpus-dir",
+            str(corpus_root),
+            "--curator-id",
+            "haex",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["reproducer"] == (
+        label_file.parent / "reproducers" / "rejects-zero-page-size"
+    )
+    assert captured["fixture"].name == "head"
+    assert captured["runs"] == 3
+    assert validate_protected_defect_label(label_file).approval.state == "self_reviewed"
+
+
+def test_cli_rejects_scope_before_recording_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    label_file = tmp_path / "corpus-oracle" / "review-v1" / "demo-item" / "ground-truth.yaml"
+    _write_pending_label(label_file, scope_file="missing.py")
+    monkeypatch.setattr(
+        "benchmark.cli.verify_reproducer_determinism",
+        lambda *_args, **_kwargs: pytest.fail("reproducer must not run for an invalid scope"),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "corpus",
+            "approve-label",
+            str(label_file),
+            "--corpus-dir",
+            str(corpus_root),
+            "--curator-id",
+            "haex",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "absent from head_sha" in result.output
+    assert validate_protected_defect_label(label_file).approval.state == "pending"
 
 
 def test_cli_validates_a_public_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
