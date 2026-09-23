@@ -53,6 +53,12 @@ class SuiteManifest(BaseModel):
 
     id: Annotated[str, Field(min_length=1)]
     content_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    status: Literal["draft", "pilot", "released"] | None = None
+    modality: Literal["review", "coding"] | None = None
+    public_schema_version: Annotated[int, Field(ge=1)] | None = None
+    description: str | None = None
+    partitions: dict[str, Annotated[int, Field(ge=0)]] | None = None
+    oracle_repository: str | None = None
 
 
 class ItemManifest(BaseModel):
@@ -103,7 +109,14 @@ def validate_public_corpus(corpus_root: Path) -> CorpusValidationReport:
             item_id,
         )
         item_ids.append(item_id)
-        item_digests.append((item_id, manifest.bundle_sha256))
+        item_digests.append(
+            (
+                item_id,
+                manifest.bundle_sha256,
+                hashlib.sha256((item_directory / "manifest.yaml").read_bytes()).hexdigest(),
+                hashlib.sha256((item_directory / "policy.md").read_bytes()).hexdigest(),
+            )
+        )
 
     _validate_suite_manifest(suite_file, corpus_root.name, item_digests)
     return CorpusValidationReport(item_ids=tuple(item_ids))
@@ -134,9 +147,9 @@ def _validate_suite_manifest(
         raise CorpusValidationError("Suite manifest content_digest does not match its items")
 
 
-def compute_suite_content_digest(item_digests: list[tuple[str, str]]) -> str:
-    """Return the deterministic content digest of a suite's (item_id, bundle_sha256) pairs."""
-    content = "\n".join(f"{item_id}:{bundle_sha256}" for item_id, bundle_sha256 in sorted(item_digests))
+def compute_suite_content_digest(item_digests: list[tuple[str, str, str, str]]) -> str:
+    """Return a deterministic digest of item, bundle, manifest and policy bytes."""
+    content = "\n".join(":".join(record) for record in sorted(item_digests))
     return hashlib.sha256(content.encode()).hexdigest()
 
 
@@ -161,12 +174,33 @@ def materialize_review_input(corpus_root: Path, item_id: str, output_directory: 
             checkout = Path(checkout_directory) / "repo"
             _run_git("clone", "--quiet", str(item_directory / "repo.bundle"), str(checkout), item_id=item_id)
             _extract_commit(checkout, manifest.head_sha, head_directory, item_id)
-            changed_paths = _git_output(
-                "diff", "--name-only", manifest.base_sha, manifest.head_sha, cwd=checkout, item_id=item_id
-            ).decode(errors="replace").splitlines()
+            changed_paths = [
+                path
+                for path in _git_output(
+                    "diff",
+                    "--no-renames",
+                    "--name-only",
+                    "-z",
+                    manifest.base_sha,
+                    manifest.head_sha,
+                    cwd=checkout,
+                    item_id=item_id,
+                )
+                .decode(errors="surrogateescape")
+                .split("\0")
+                if path
+            ]
             _reject_protected_diff_paths(changed_paths, item_id)
             (staging_root / "diff.patch").write_bytes(
-                _git_output("diff", "--binary", manifest.base_sha, manifest.head_sha, cwd=checkout, item_id=item_id)
+                _git_output(
+                    "diff",
+                    "--no-renames",
+                    "--binary",
+                    manifest.base_sha,
+                    manifest.head_sha,
+                    cwd=checkout,
+                    item_id=item_id,
+                )
             )
         manifest_file = staging_root / "manifest.yaml"
         policy_file = staging_root / "policy.md"

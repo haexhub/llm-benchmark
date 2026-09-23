@@ -132,6 +132,7 @@ def run_live_pr(
     erledigt nur noch offene Arbeit und leitet den Lifecycle-State neu her.
     """
     import os
+    import tempfile
     from datetime import UTC, datetime
 
     from benchmark.github.fetch import fetch_cr_comments
@@ -168,14 +169,17 @@ def run_live_pr(
     )
 
     work_dir = live_dir / "work" / repo.replace("/", "__") / str(pr)
+    work_dir.mkdir(parents=True, exist_ok=True)
 
     def _gito(snapshot: LivePRSnapshot) -> list[Finding]:
-        return _run_live_gito(snapshot, work_dir / snapshot.head_sha, TOOL_TIMEOUT_SECONDS)
+        with tempfile.TemporaryDirectory(dir=work_dir, prefix="gito-") as attempt_dir:
+            return _run_live_gito(snapshot, Path(attempt_dir), TOOL_TIMEOUT_SECONDS)
 
     def _pragent(snapshot: LivePRSnapshot) -> list[Finding]:
-        return _run_live_pragent(
-            store.diff_path(snapshot), work_dir / snapshot.head_sha, TOOL_TIMEOUT_SECONDS
-        )
+        with tempfile.TemporaryDirectory(dir=work_dir, prefix="pr-agent-") as attempt_dir:
+            return _run_live_pragent(
+                store.diff_path(snapshot), Path(attempt_dir), TOOL_TIMEOUT_SECONDS
+            )
 
     try:
         observation = run_live_shadow_review(

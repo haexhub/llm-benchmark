@@ -87,3 +87,5 @@ live_repositories:
     assert "running_challengers" in result.output
     gito.assert_called_once()
     pragent.assert_called_once()
+    assert "b" * 40 not in str(gito.call_args.args[1])
+    assert "b" * 40 not in str(pragent.call_args.args[1])

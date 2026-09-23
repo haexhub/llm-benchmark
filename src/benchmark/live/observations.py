@@ -16,6 +16,7 @@ from benchmark.models import Finding
 if TYPE_CHECKING:
     from .scheduler import ChallengerResultRecordResult, LiveChallengerResult
 
+_TERMINAL_STATES = frozenset({"complete", "baseline_incomplete", "challenger_failed"})
 
 def _publish_once(destination: Path, content: str) -> bool:
     """Atomically publish a complete artifact; return False without changes if it exists."""
@@ -132,7 +133,12 @@ class LiveObservationStore:
         terminal state.
         """
         destination = self._path_for(snapshot)
-        updated = self._load(destination).model_copy(update={"state": state})
+        current = self._load(destination)
+        if current.state in _TERMINAL_STATES and state != current.state:
+            raise ValueError(f"Cannot transition terminal observation from {current.state}")
+        if current.state == state:
+            return current
+        updated = current.model_copy(update={"state": state})
         _publish_replacing(destination, updated.model_dump_json(indent=2) + "\n")
         return updated
 

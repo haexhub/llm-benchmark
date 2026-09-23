@@ -12,6 +12,8 @@ from .ingest import LivePRIngestor
 from .observations import LiveObservationStore, LivePRObservation, LivePRSnapshot
 from .runner import LiveShadowRunner
 
+_TERMINAL_STATES = frozenset({"complete", "baseline_incomplete", "challenger_failed"})
+
 
 def run_live_shadow_review(
     ingestor: LivePRIngestor,
@@ -34,6 +36,9 @@ def run_live_shadow_review(
     observation = ingested.observation
     snapshot = observation.snapshot
 
+    if observation.state in _TERMINAL_STATES:
+        return observation
+
     if observation.state == "queued":
         observation = store.transition_state(snapshot, "running_challengers")
 
@@ -46,9 +51,11 @@ def run_live_shadow_review(
 
     results = runner.run(snapshot, challengers)
 
-    if baseline_attempt.status == "waiting":
+    recorded_challengers = {result.attempt.challenger for result in results}
+    if baseline_attempt.status == "waiting" or set(challengers) - recorded_challengers:
         # Challengers may already be done, but the baseline window hasn't
-        # closed; stay non-terminal until a later call resolves it.
+        # closed, or a challenger has not recorded a result yet; stay
+        # non-terminal until a later call resolves it.
         return observation
 
     if any(result.attempt.state == "failed" for result in results):

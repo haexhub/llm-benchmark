@@ -91,7 +91,16 @@ def create_valid_corpus(tmp_path: Path) -> Path:
         yaml.safe_dump(
             {
                 "id": "review-v1",
-                "content_digest": compute_suite_content_digest([("demo-item", bundle_sha256)]),
+                "content_digest": compute_suite_content_digest(
+                    [
+                        (
+                            "demo-item",
+                            bundle_sha256,
+                            hashlib.sha256((item_dir / "manifest.yaml").read_bytes()).hexdigest(),
+                            hashlib.sha256((item_dir / "policy.md").read_bytes()).hexdigest(),
+                        )
+                    ]
+                ),
             },
             sort_keys=False,
         )
@@ -139,7 +148,8 @@ def test_rejects_a_diff_that_deletes_a_protected_file_between_base_and_head(tmp_
     base_sha = run_git("rev-parse", "HEAD", cwd=source_repo)
 
     (source_repo / "service.py").write_text("def value() -> int:\n    return 0\n")
-    run_git("rm", "--quiet", "ground-truth.yaml", cwd=source_repo)
+    run_git("mv", "ground-truth.yaml", "notes.yaml", cwd=source_repo)
+    (source_repo / "notes.yaml").write_text("defects: [{id: def-secret}]\nextra: true\n")
     run_git("add", "service.py", cwd=source_repo)
     run_git(
         "-c",
@@ -149,7 +159,7 @@ def test_rejects_a_diff_that_deletes_a_protected_file_between_base_and_head(tmp_
         "commit",
         "--quiet",
         "-m",
-        "buggy change, drop oracle file",
+        "buggy change, rename oracle file",
         cwd=source_repo,
     )
     head_sha = run_git("rev-parse", "HEAD", cwd=source_repo)
@@ -160,15 +170,6 @@ def test_rejects_a_diff_that_deletes_a_protected_file_between_base_and_head(tmp_
     (item_dir / "policy.md").write_text("# Policy\n")
     run_git("bundle", "create", str(item_dir / "repo.bundle"), "main", cwd=source_repo)
     bundle_sha256 = hashlib.sha256((item_dir / "repo.bundle").read_bytes()).hexdigest()
-    (corpus_root / "suite.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "id": "review-v1",
-                "content_digest": compute_suite_content_digest([("demo-item", bundle_sha256)]),
-            },
-            sort_keys=False,
-        )
-    )
     (item_dir / "manifest.yaml").write_text(
         yaml.safe_dump(
             {
@@ -182,6 +183,24 @@ def test_rejects_a_diff_that_deletes_a_protected_file_between_base_and_head(tmp_
                 "language": "python",
                 "diff_size_bucket": "small",
                 "difficulty": "easy",
+            },
+            sort_keys=False,
+        )
+    )
+    (corpus_root / "suite.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "review-v1",
+                "content_digest": compute_suite_content_digest(
+                    [
+                        (
+                            "demo-item",
+                            bundle_sha256,
+                            hashlib.sha256((item_dir / "manifest.yaml").read_bytes()).hexdigest(),
+                            hashlib.sha256((item_dir / "policy.md").read_bytes()).hexdigest(),
+                        )
+                    ]
+                ),
             },
             sort_keys=False,
         )
@@ -200,6 +219,17 @@ def test_rejects_a_suite_content_digest_that_does_not_match_its_items(tmp_path: 
 
     with pytest.raises(CorpusValidationError, match="content_digest"):
         validate_public_corpus(corpus_root)
+
+
+def test_suite_digest_covers_manifest_and_policy_bytes() -> None:
+    records = [("demo-item", "b" * 64, "m" * 64, "p" * 64)]
+
+    assert compute_suite_content_digest(records) != compute_suite_content_digest(
+        [("demo-item", "b" * 64, "n" * 64, "p" * 64)]
+    )
+    assert compute_suite_content_digest(records) != compute_suite_content_digest(
+        [("demo-item", "b" * 64, "m" * 64, "q" * 64)]
+    )
 
 
 def test_rejects_a_suite_id_that_does_not_match_its_directory_name(tmp_path: Path) -> None:

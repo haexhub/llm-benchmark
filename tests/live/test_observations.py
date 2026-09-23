@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from benchmark.live import LiveObservationStore, LivePRSnapshot
 
 
@@ -58,3 +60,20 @@ def test_transitions_the_observations_lifecycle_state_without_changing_its_ident
     assert updated.id == recorded.observation.id
     assert updated.created_at == recorded.observation.created_at
     assert store.record(snapshot).observation.state == "running_challengers"
+
+
+def test_rejects_reopening_a_terminal_observation(tmp_path) -> None:
+    snapshot = LivePRSnapshot(
+        repository="haexmas/holzi",
+        pr_number=27,
+        base_sha="a" * 40,
+        head_sha="b" * 40,
+        diff_sha256="c" * 64,
+    )
+    store = LiveObservationStore(tmp_path)
+    store.record(snapshot)
+    store.transition_state(snapshot, "running_challengers")
+    store.transition_state(snapshot, "baseline_incomplete")
+
+    with pytest.raises(ValueError, match="terminal"):
+        store.transition_state(snapshot, "running_challengers")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import Mock
 
 from benchmark.live import (
     CodeRabbitBaselineCapture,
@@ -132,3 +133,66 @@ def test_reaches_challenger_failed_even_when_the_baseline_is_present(tmp_path) -
     )
 
     assert observation.state == "challenger_failed"
+
+
+def test_does_not_reopen_or_recapture_a_terminal_observation(tmp_path) -> None:
+    comments: list[list[dict]] = [[]]
+    store, ingestor, baseline_capture, runner = _build(tmp_path, coderabbit_comments=comments[0])
+    integration = _integration()
+    ingested_at = ingestor.ingest(integration, 27).observation.created_at
+    first = run_live_shadow_review(
+        ingestor,
+        baseline_capture,
+        runner,
+        store,
+        integration,
+        27,
+        {"gito": lambda _snapshot: []},
+        now=ingested_at + timedelta(minutes=31),
+    )
+    assert first.state == "baseline_incomplete"
+
+    calls = 0
+
+    def unexpected_fetch(_repo: str, _pr: int) -> list[dict]:
+        nonlocal calls
+        calls += 1
+        return [_coderabbit_comment()]
+
+    late_capture = CodeRabbitBaselineCapture(store, fetch_comments=unexpected_fetch)
+    second = run_live_shadow_review(
+        ingestor,
+        late_capture,
+        runner,
+        store,
+        integration,
+        27,
+        {"gito": lambda _snapshot: []},
+        now=ingested_at + timedelta(minutes=60),
+    )
+
+    assert second.state == "baseline_incomplete"
+    assert calls == 0
+
+
+def test_stays_running_when_a_requested_challenger_has_no_recorded_result(tmp_path) -> None:
+    store, ingestor, baseline_capture, _runner = _build(
+        tmp_path, coderabbit_comments=[_coderabbit_comment()]
+    )
+    integration = _integration()
+    runner = Mock()
+    runner.run.return_value = []
+    ingested_at = ingestor.ingest(integration, 27).observation.created_at
+
+    observation = run_live_shadow_review(
+        ingestor,
+        baseline_capture,
+        runner,
+        store,
+        integration,
+        27,
+        {"gito": lambda _snapshot: []},
+        now=ingested_at + timedelta(minutes=31),
+    )
+
+    assert observation.state == "running_challengers"
