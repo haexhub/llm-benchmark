@@ -39,6 +39,21 @@ class RepoConfig(BaseModel):
         return f"{self.owner}__{self.name}"
 
 
+class LiveRepositoryIntegration(BaseModel):
+    """Explicit opt-in and baseline policy for operational live PR shadowing."""
+
+    model_config = ConfigDict(frozen=True)
+
+    owner: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    enabled: bool = False
+    baseline_wait_minutes: int = Field(default=30, gt=0, le=1440)
+
+    @property
+    def slug(self) -> str:
+        return f"{self.owner}/{self.name}"
+
+
 class Finding(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     tool: Tool

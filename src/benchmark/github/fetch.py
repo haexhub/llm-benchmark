@@ -24,6 +24,22 @@ def fetch_diff(owner: str, repo: str, pr: int) -> str:
     return proc.stdout
 
 
+def fetch_diff_for_refs(owner: str, repo: str, base_sha: str, head_sha: str) -> str:
+    """Return a diff for an explicit immutable Base/Head pair, never a mutable PR ref."""
+    compare_endpoint = f"repos/{owner}/{repo}/compare/{base_sha}...{head_sha}"
+    proc = subprocess.run(
+        ["gh", "api", "-H", "Accept: application/vnd.github.v3.diff", compare_endpoint],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"gh compare diff failed for {owner}/{repo} {base_sha}...{head_sha}: {proc.stderr.strip()}"
+        )
+    return proc.stdout
+
+
 def fetch_pr_refs(owner: str, repo: str, pr: int) -> dict[str, str]:
     """Return {base_sha, head_sha, head_ref} for a PR (used to review it in a local clone)."""
     proc = subprocess.run(

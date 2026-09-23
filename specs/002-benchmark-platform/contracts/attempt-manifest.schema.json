@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AttemptManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["attempt_id", "suite_version_digest", "item_id", "candidate_version_id", "model", "config_hash", "capability_profile_id", "comparison_axis", "evaluator_version", "score_policy_version", "resource_profile", "budget", "is_warmup", "created_at"],
+  "properties": {
+    "attempt_id": {"type": "string", "format": "uuid"},
+    "suite_version_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "item_id": {"type": "string", "format": "uuid"},
+    "candidate_version_id": {"type": "string", "format": "uuid"},
+    "model": {"type": "string", "minLength": 1},
+    "config_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "capability_profile_id": {"type": "string", "format": "uuid"},
+    "comparison_axis": {"enum": ["model_under_harness", "end_to_end_agent"]},
+    "evaluator_version": {"type": "string", "minLength": 1},
+    "score_policy_version": {"type": "string", "minLength": 1},
+    "resource_profile": {"type": "string", "minLength": 1},
+    "budget": {"type": "object", "required": ["wall_seconds"], "properties": {"wall_seconds": {"type": "integer", "minimum": 1}, "token_limit": {"type": "integer", "minimum": 1}}},
+    "is_warmup": {"type": "boolean"},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

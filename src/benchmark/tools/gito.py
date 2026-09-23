@@ -56,12 +56,12 @@ def run_gito_on_pr(
     repo: str,
     pr: int,
     base_sha: str,
-    head_ref: str,
+    head_sha: str,
     clone_dir: Path,
     out_dir: Path,
     timeout: int = 600,
 ) -> RunResult:
-    """Clone the repo, fetch the PR's head ref, and run gito against that diff.
+    """Clone the repo, fetch the pinned Head SHA, and run gito against that diff.
 
     gito's own `--url` clones exactly that URL — passing a PR URL there fails
     (`git clone <pr-url>` isn't a valid clone target; verified live). Its `--path`
@@ -78,7 +78,7 @@ def run_gito_on_pr(
     if not clone_result.ok:
         return clone_result
     fetch_result = run_cli(
-        ["git", "fetch", "--quiet", "origin", f"refs/pull/{pr}/head:{local_head_ref}"],
+        ["git", "fetch", "--quiet", "origin", f"{head_sha}:{local_head_ref}"],
         timeout=timeout,
         cwd=clone_dir,
     )

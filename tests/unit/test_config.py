@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from benchmark.config import EnvConfigError, load_repos, require_env
+from benchmark.config import EnvConfigError, load_live_repositories, load_repos, require_env
 
 
 def test_require_env_returns_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,6 +49,26 @@ def test_load_repos_empty_list(tmp_path: Path) -> None:
     yaml_file = tmp_path / "repos.yaml"
     yaml_file.write_text("repos: []\n")
     assert load_repos(yaml_file) == []
+
+
+def test_loads_explicit_live_repository_opt_ins(tmp_path: Path) -> None:
+    yaml_file = tmp_path / "repos.yaml"
+    yaml_file.write_text(
+        """
+repos: []
+live_repositories:
+  - owner: alice
+    name: repo-a
+    enabled: true
+    baseline_wait_minutes: 30
+"""
+    )
+
+    integrations = load_live_repositories(yaml_file)
+
+    assert len(integrations) == 1
+    assert integrations[0].slug == "alice/repo-a"
+    assert integrations[0].baseline_wait_minutes == 30
 
 
 def test_load_repos_missing_file(tmp_path: Path) -> None:

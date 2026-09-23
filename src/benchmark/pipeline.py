@@ -1,14 +1,15 @@
 """High-level pipeline: iterate (Repo, PR) combos through fetch → run → match → report."""
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import logging
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
 from benchmark.coderabbit.parser import parse_cr
 from benchmark.github.fetch import fetch_cr_comments, fetch_diff, fetch_pr_refs
+from benchmark.live.resource_lease import SqliteResourceLeaseStore
 from benchmark.matching.aggregator import apply_manual_reviews, load_manual_reviews
 from benchmark.matching.dedup import dedup_intra_tool
 from benchmark.matching.judge import JudgeClient, make_judge
@@ -30,6 +31,7 @@ log = logging.getLogger("benchmark.pipeline")
 # pr-agent mid-review on that PR with rc=-1 (timeout), not a code bug.
 TOOL_TIMEOUT_SECONDS = 1800
 UNCERTAIN_CONFIDENCE_THRESHOLD = 0.6
+GPU_LEASE_TTL_SECONDS = 3600
 
 
 def pr_dir(runs_dir: Path, repo: RepoConfig, pr: int) -> Path:
@@ -71,44 +73,50 @@ def do_fetch(repos: list[RepoConfig], runs_dir: Path, *, force: bool, active_rep
 
 
 def do_run(repos: list[RepoConfig], runs_dir: Path, *, force: bool, active_repo: str | None, active_pr: int | None) -> None:
-    for repo, pr in _filter(active_repo, active_pr, repos):
-        base = pr_dir(runs_dir, repo, pr)
-        if not base.exists():
-            log.warning("skip %s#%d: fetch not run yet", repo.slug, pr)
-            continue
+    lease_store = SqliteResourceLeaseStore(runs_dir / "run-engine.sqlite3")
+    worker_id = f"legacy-pipeline-{os.getpid()}"
+    lease = lease_store.acquire("local-94gb-gpu", worker_id, ttl_seconds=GPU_LEASE_TTL_SECONDS)
+    if lease is None:
+        log.error("local-94gb-gpu is leased by another worker; skipping run")
+        return
+    try:
+        for repo, pr in _filter(active_repo, active_pr, repos):
+            base = pr_dir(runs_dir, repo, pr)
+            if not base.exists():
+                log.warning("skip %s#%d: fetch not run yet", repo.slug, pr)
+                continue
 
-        tasks: dict[str, callable] = {}
-        gito_target = base / "gito.json"
-        pragent_target = base / "pr-agent.json"
+            tasks: dict[str, callable] = {}
+            gito_target = base / "gito.json"
+            pragent_target = base / "pr-agent.json"
 
-        if not gito_target.exists() or force:
-            def _do_gito(_r=repo, _p=pr, _b=base, _t=gito_target):
-                return _run_gito(_r, _p, _b, _t)
+            if not gito_target.exists() or force:
+                def _do_gito(_r=repo, _p=pr, _b=base, _t=gito_target):
+                    return _run_gito(_r, _p, _b, _t)
 
-            tasks["gito"] = _do_gito
-        if not pragent_target.exists() or force:
-            def _do_pragent(_b=base, _t=pragent_target):
-                return _run_pragent(_b, _t)
+                tasks["gito"] = _do_gito
+            if not pragent_target.exists() or force:
+                def _do_pragent(_b=base, _t=pragent_target):
+                    return _run_pragent(_b, _t)
 
-            tasks["pr-agent"] = _do_pragent
+                tasks["pr-agent"] = _do_pragent
 
-        if not tasks:
-            continue
+            if not tasks:
+                continue
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
-            futures = {ex.submit(fn): name for name, fn in tasks.items()}
-            # as_completed (not futures.items()) so a fast failure is logged
-            # immediately instead of waiting behind a slower sibling task —
-            # gito can take 10x longer than pr-agent for the same PR, and
-            # iterating in submission order would delay (or on external kill,
-            # lose) a fast task's failed.log entry until gito's turn came up.
-            for fut in concurrent.futures.as_completed(futures):
-                name = futures[fut]
+            # Both adapters use the shared local model endpoint. Running them in
+            # parallel oversubscribes the one-GPU profile and invalidates timings.
+            for name, task in tasks.items():
+                if not lease.renew(ttl_seconds=GPU_LEASE_TTL_SECONDS):
+                    log.error("lost local-94gb-gpu lease; stopping run")
+                    return
                 try:
-                    fut.result()
+                    task()
                     log.info("%s completed for %s#%d", name, repo.slug, pr)
                 except Exception as exc:  # noqa: BLE001
                     _log_fail(base, f"run:{name}", exc)
+    finally:
+        lease.release()
 
 
 def _run_gito(repo: RepoConfig, pr: int, base: Path, target: Path) -> None:
@@ -116,7 +124,7 @@ def _run_gito(repo: RepoConfig, pr: int, base: Path, target: Path) -> None:
     clone_dir = base / "gito-clone"
     out_dir = base / "gito-workdir"
     result = run_gito_on_pr(
-        repo.owner, repo.name, pr, refs["base_sha"], refs["head_ref"], clone_dir, out_dir,
+        repo.owner, repo.name, pr, refs["base_sha"], refs["head_sha"], clone_dir, out_dir,
         timeout=TOOL_TIMEOUT_SECONDS,
     )
     if not result.ok:

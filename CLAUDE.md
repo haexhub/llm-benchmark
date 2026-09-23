@@ -1,12 +1,15 @@
 <!-- SPECKIT START -->
-Current active feature: `specs/001-pr-review-benchmark/`
+Current active feature: `specs/004-live-pr-shadow-review/`
 
-- Spec: `specs/001-pr-review-benchmark/spec.md`
-- Plan: `specs/001-pr-review-benchmark/plan.md`
-- Research: `specs/001-pr-review-benchmark/research.md`
-- Data Model: `specs/001-pr-review-benchmark/data-model.md`
-- Contracts: `specs/001-pr-review-benchmark/contracts/`
-- Quickstart: `specs/001-pr-review-benchmark/quickstart.md`
+- Spec: `specs/004-live-pr-shadow-review/spec.md`
+- Plan: to be created
+- Research: to be created
+- Data Model: to be created
+- Contracts: to be created
+- Quickstart: to be created
 
-Read the plan first for tech stack, project structure, and open verification points (research.md R1/R2 must be verified against live CLIs before implementation).
+Read the plan first. `002-benchmark-platform` contains the shared constitution
+and contracts. The existing `001-pr-review-benchmark` remains the historical
+PR-review spike and adapter-smoke-test feature; its outputs are not
+decision-grade scores.
 <!-- SPECKIT END -->
