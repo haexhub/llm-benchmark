@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from .validator import CorpusValidationError
+from .validator import CorpusValidationError, read_head_file_line_count
 
 
 class AffectedScope(BaseModel):
@@ -19,6 +20,16 @@ class AffectedScope(BaseModel):
     file: Annotated[str, Field(min_length=1)]
     line_start: Annotated[int | None, Field(ge=1)] = None
     line_end: Annotated[int | None, Field(ge=1)] = None
+
+    @model_validator(mode="after")
+    def _ordered_line_range(self) -> AffectedScope:
+        if (
+            self.line_start is not None
+            and self.line_end is not None
+            and self.line_start > self.line_end
+        ):
+            raise ValueError("line_start must not be greater than line_end")
+        return self
 
 
 class LabelApproval(BaseModel):
@@ -87,3 +98,47 @@ def validate_protected_defect_label(label_file: Path) -> ProtectedDefectLabel:
         return ProtectedDefectLabel.model_validate(document)
     except ValidationError as error:
         raise CorpusValidationError(f"Protected defect label violates contract: {error}") from error
+
+
+def record_curator_approval(
+    label_file: Path,
+    *,
+    curator_id: str,
+    evidence_digest: str,
+    state: Literal["self_reviewed", "approved", "adjudicated"] = "self_reviewed",
+) -> ProtectedDefectLabel:
+    """Record an auditable human curator sign-off on a protected Gold label.
+
+    This must only be called after the named curator has actually reviewed the
+    label and its reproducer evidence; it is the accountable record of that
+    review, not a substitute for it.
+    """
+    validate_protected_defect_label(label_file)
+    document = yaml.safe_load(label_file.read_text())
+    document["approval"] = {
+        "reviewer_count": 1,
+        "state": state,
+        "curator_id": curator_id,
+        "reviewed_at": datetime.now(UTC).isoformat(),
+        "evidence_digest": evidence_digest,
+    }
+    updated = ProtectedDefectLabel.model_validate(document)
+    label_file.write_text(yaml.safe_dump(document, sort_keys=False))
+    return updated
+
+
+def validate_defect_label_scope(
+    bundle: Path, head_sha: str, label: ProtectedDefectLabel, item_id: str
+) -> None:
+    """Verify every affected_scope location exists on the pinned Head revision."""
+    for scope in label.affected_scope:
+        line_count = read_head_file_line_count(bundle, head_sha, scope.file, item_id)
+        if line_count is None:
+            raise CorpusValidationError(
+                f"{item_id}: {label.id} affected_scope file {scope.file} is absent from head_sha"
+            )
+        if scope.line_end is not None and scope.line_end > line_count:
+            raise CorpusValidationError(
+                f"{item_id}: {label.id} affected_scope line_end {scope.line_end} exceeds "
+                f"{scope.file} ({line_count} lines) at head_sha"
+            )

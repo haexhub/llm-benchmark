@@ -14,6 +14,15 @@ from .validator import CorpusValidationError
 
 
 @dataclass(frozen=True)
+class DeterminismResult:
+    """Whether a reproducer passed identically across repeated isolated runs."""
+
+    deterministic: bool
+    run_count: int
+    evidence_digest: str
+
+
+@dataclass(frozen=True)
 class ReproducerResult:
     """Recorded result of one isolated protected reproducer execution."""
 
@@ -79,6 +88,21 @@ def run_protected_reproducer(
         stdout=stdout,
         stderr=stderr,
         timed_out=timed_out,
+    )
+
+
+def verify_reproducer_determinism(
+    reproducer: Path, fixture_root: Path, *, runs: int = 3
+) -> DeterminismResult:
+    """Run a protected reproducer repeatedly and digest the evidence for curator sign-off."""
+    if runs < 1:
+        raise CorpusValidationError("runs must be at least 1")
+    results = [run_protected_reproducer(reproducer, fixture_root) for _ in range(runs)]
+    deterministic = all(result.passed for result in results)
+    digest_source = "\n".join(f"{result.exit_code}:{result.fixture_sha256}" for result in results)
+    evidence_digest = hashlib.sha256(digest_source.encode()).hexdigest()
+    return DeterminismResult(
+        deterministic=deterministic, run_count=runs, evidence_digest=evidence_digest
     )
 
 

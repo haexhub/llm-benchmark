@@ -11,7 +11,12 @@ import typer
 from rich.console import Console
 
 from benchmark.config import env, load_env, load_live_repositories, load_repos
-from benchmark.corpus import CorpusValidationError, validate_public_corpus
+from benchmark.corpus import (
+    CorpusValidationError,
+    record_curator_approval,
+    validate_public_corpus,
+    verify_reproducer_determinism,
+)
 from benchmark.github.fetch import fetch_diff_for_refs, fetch_pr_refs
 from benchmark.live import LiveObservationStore, LivePRIngestor, LivePRSnapshot
 from benchmark.logging_setup import setup_logging
@@ -52,6 +57,41 @@ def validate_corpus(
         console.print(f"[red]Corpus validation failed:[/red] {error}")
         raise typer.Exit(1) from error
     console.print(f"[green]Validated {report.item_count} public corpus item(s).[/green]")
+
+
+@corpus_app.command("approve-label")
+def approve_label(
+    label_file: Annotated[Path, typer.Argument(help="Pfad zur protected ground-truth.yaml.")],
+    reproducer: Annotated[Path, typer.Option(help="Pfad zum Reproducer-Skript.")],
+    fixture: Annotated[Path, typer.Option(help="Pfad zur materialisierten, oracle-freien Head-Fixture.")],
+    curator_id: Annotated[str, typer.Option(help="ID des Kurators, der diese Freigabe verantwortet.")],
+    runs: Annotated[int, typer.Option(help="Anzahl deterministischer Reproducer-Läufe.")] = 3,
+) -> None:
+    """Läuft den Reproducer mehrfach und trägt bei Erfolg die Curator-Freigabe ein.
+
+    Nur ausführen, nachdem ein Mensch Label, Scope und Reproducer inhaltlich geprüft hat.
+    """
+    try:
+        determinism = verify_reproducer_determinism(reproducer, fixture, runs=runs)
+    except CorpusValidationError as error:
+        console.print(f"[red]Reproducer verification failed:[/red] {error}")
+        raise typer.Exit(1) from error
+    if not determinism.deterministic:
+        console.print(
+            f"[red]Reproducer did not pass all {determinism.run_count} isolated runs.[/red]"
+        )
+        raise typer.Exit(1)
+    try:
+        label = record_curator_approval(
+            label_file, curator_id=curator_id, evidence_digest=determinism.evidence_digest
+        )
+    except CorpusValidationError as error:
+        console.print(f"[red]Approval failed:[/red] {error}")
+        raise typer.Exit(1) from error
+    console.print(
+        f"[green]{label.id} approved by {curator_id} ({label.approval.state}, "
+        f"{determinism.run_count}/{determinism.run_count} deterministic runs).[/green]"
+    )
 
 
 @live_app.command("ingest")

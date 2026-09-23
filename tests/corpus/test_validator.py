@@ -14,9 +14,12 @@ from benchmark.corpus import (
     CorpusValidationError,
     compute_suite_content_digest,
     materialize_review_input,
+    record_curator_approval,
+    validate_defect_label_scope,
     validate_protected_defect_label,
     validate_public_corpus,
 )
+from benchmark.corpus.oracle import ProtectedDefectLabel
 
 
 def run_git(*args: str, cwd: Path) -> str:
@@ -357,6 +360,81 @@ def test_validates_a_single_curator_gold_label_with_auditable_evidence(tmp_path:
     label = validate_protected_defect_label(label_file)
 
     assert label.approval.state == "self_reviewed"
+
+
+def _demo_label(**overrides: object) -> ProtectedDefectLabel:
+    fields = {
+        "id": "def-page-size-zero",
+        "category": "correctness",
+        "severity": "minor",
+        "affected_scope": [{"file": "service.py", "line_start": 1, "line_end": 2}],
+        "impact": "A zero page size violates the public API contract.",
+        "reproducer_id": "rejects-zero-page-size",
+        "approval": {"reviewer_count": 0, "state": "pending"},
+        **overrides,
+    }
+    return ProtectedDefectLabel.model_validate(fields)
+
+
+def test_rejects_an_affected_scope_with_line_start_after_line_end() -> None:
+    with pytest.raises(ValueError, match="line_start must not be greater than line_end"):
+        _demo_label(affected_scope=[{"file": "service.py", "line_start": 5, "line_end": 1}])
+
+
+def test_validates_a_defect_label_scope_within_the_head_revision(tmp_path: Path) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    item_dir = corpus_root / "items" / "demo-item"
+    manifest = yaml.safe_load((item_dir / "manifest.yaml").read_text())
+
+    validate_defect_label_scope(
+        item_dir / "repo.bundle", manifest["head_sha"], _demo_label(), "demo-item"
+    )
+
+
+def test_rejects_a_defect_label_scope_file_absent_from_head_revision(tmp_path: Path) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    item_dir = corpus_root / "items" / "demo-item"
+    manifest = yaml.safe_load((item_dir / "manifest.yaml").read_text())
+    label = _demo_label(affected_scope=[{"file": "missing.py", "line_start": 1, "line_end": 1}])
+
+    with pytest.raises(CorpusValidationError, match="absent from head_sha"):
+        validate_defect_label_scope(item_dir / "repo.bundle", manifest["head_sha"], label, "demo-item")
+
+
+def test_rejects_a_defect_label_scope_line_end_beyond_file_length(tmp_path: Path) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    item_dir = corpus_root / "items" / "demo-item"
+    manifest = yaml.safe_load((item_dir / "manifest.yaml").read_text())
+    label = _demo_label(affected_scope=[{"file": "service.py", "line_start": 1, "line_end": 99}])
+
+    with pytest.raises(CorpusValidationError, match="exceeds service.py"):
+        validate_defect_label_scope(item_dir / "repo.bundle", manifest["head_sha"], label, "demo-item")
+
+
+def test_records_an_auditable_curator_approval(tmp_path: Path) -> None:
+    label_file = tmp_path / "ground-truth.yaml"
+    label_file.write_text(
+        yaml.safe_dump(
+            {
+                "id": "def-page-size-zero",
+                "category": "correctness",
+                "severity": "minor",
+                "affected_scope": [{"file": "src/paging.py", "line_start": 3, "line_end": 4}],
+                "impact": "A zero page size violates the public API contract.",
+                "reproducer_id": "rejects-zero-page-size",
+                "approval": {"reviewer_count": 0, "state": "pending"},
+            },
+            sort_keys=False,
+        )
+    )
+
+    label = record_curator_approval(label_file, curator_id="haex", evidence_digest="a" * 64)
+
+    assert label.approval.state == "self_reviewed"
+    assert label.approval.curator_id == "haex"
+    assert label.approval.decision_ready is True
+    reloaded = validate_protected_defect_label(label_file)
+    assert reloaded.approval.evidence_digest == "a" * 64
 
 
 def test_cli_validates_a_public_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -254,6 +254,25 @@ def _load_manifest(manifest_file: Path, item_name: str) -> ItemManifest:
         raise CorpusValidationError(f"{item_name}: manifest violates contract: {error}") from error
 
 
+def read_head_file_line_count(bundle: Path, head_sha: str, file_path: str, item_id: str) -> int | None:
+    """Return the line count of `file_path` at `head_sha` in `bundle`, or None if absent."""
+    with TemporaryDirectory(prefix="benchmark-corpus-") as checkout_directory:
+        checkout = Path(checkout_directory) / "repo"
+        _run_git("clone", "--quiet", str(bundle), str(checkout), item_id=item_id)
+        result = subprocess.run(
+            ["git", "show", f"{head_sha}:{file_path}"],
+            cwd=checkout,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode:
+            return None
+        content = result.stdout
+        if not content:
+            return 0
+        return content.count(b"\n") + (0 if content.endswith(b"\n") else 1)
+
+
 def _validate_git_pair(bundle: Path, base_sha: str, head_sha: str, item_id: str) -> None:
     with TemporaryDirectory(prefix="benchmark-corpus-") as checkout_directory:
         checkout = Path(checkout_directory) / "repo"

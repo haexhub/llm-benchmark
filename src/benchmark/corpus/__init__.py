@@ -8,8 +8,18 @@ from .assessment import (
     load_assessments,
     save_assessments,
 )
-from .oracle import ProtectedDefectLabel, validate_protected_defect_label
-from .reproducer import ReproducerResult, run_protected_reproducer
+from .oracle import (
+    ProtectedDefectLabel,
+    record_curator_approval,
+    validate_defect_label_scope,
+    validate_protected_defect_label,
+)
+from .reproducer import (
+    DeterminismResult,
+    ReproducerResult,
+    run_protected_reproducer,
+    verify_reproducer_determinism,
+)
 from .scoring import ReviewCategoryScorecard, ReviewScorecard, build_review_scorecard
 from .validator import (
     CorpusValidationError,
@@ -24,6 +34,7 @@ __all__ = [
     "AssessmentDecision",
     "CorpusValidationError",
     "CorpusValidationReport",
+    "DeterminismResult",
     "FindingAssessment",
     "RunnerInput",
     "UsefulnessAssessment",
@@ -32,12 +43,15 @@ __all__ = [
     "load_assessments",
     "materialize_review_input",
     "ProtectedDefectLabel",
+    "record_curator_approval",
     "ReproducerResult",
     "ReviewCategoryScorecard",
     "ReviewScorecard",
     "build_review_scorecard",
     "run_protected_reproducer",
     "save_assessments",
+    "validate_defect_label_scope",
     "validate_protected_defect_label",
     "validate_public_corpus",
+    "verify_reproducer_determinism",
 ]

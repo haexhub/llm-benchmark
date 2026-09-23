@@ -11,7 +11,7 @@
 - [x] T004 Add `src/benchmark/corpus/` package and `corpus validate` CLI.
 - [x] T005 [P] Add item-manifest and protected-label schema validation tests.
 - [x] T006 Add a runner-input builder that excludes Oracle paths/Git objects.
-- [ ] T007 [P] Add isolation, SHA/digest and scope-consistency tests.
+- [x] T007 [P] Add isolation, SHA/digest and scope-consistency tests.
 - [x] T008 Add deterministic reproducer execution in a network-disabled sandbox.
 
 ## Phase 3: Pilot Fixtures and Evaluation
