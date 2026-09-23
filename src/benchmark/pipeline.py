@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
 from benchmark.coderabbit.parser import parse_cr
 from benchmark.github.fetch import fetch_cr_comments, fetch_diff, fetch_pr_refs
+from benchmark.live.resource_lease import SqliteResourceLeaseStore
 from benchmark.matching.aggregator import apply_manual_reviews, load_manual_reviews
 from benchmark.matching.dedup import dedup_intra_tool
 from benchmark.matching.judge import JudgeClient, make_judge
@@ -29,6 +31,7 @@ log = logging.getLogger("benchmark.pipeline")
 # pr-agent mid-review on that PR with rc=-1 (timeout), not a code bug.
 TOOL_TIMEOUT_SECONDS = 1800
 UNCERTAIN_CONFIDENCE_THRESHOLD = 0.6
+GPU_LEASE_TTL_SECONDS = 3600
 
 
 def pr_dir(runs_dir: Path, repo: RepoConfig, pr: int) -> Path:
@@ -70,38 +73,50 @@ def do_fetch(repos: list[RepoConfig], runs_dir: Path, *, force: bool, active_rep
 
 
 def do_run(repos: list[RepoConfig], runs_dir: Path, *, force: bool, active_repo: str | None, active_pr: int | None) -> None:
-    for repo, pr in _filter(active_repo, active_pr, repos):
-        base = pr_dir(runs_dir, repo, pr)
-        if not base.exists():
-            log.warning("skip %s#%d: fetch not run yet", repo.slug, pr)
-            continue
+    lease_store = SqliteResourceLeaseStore(runs_dir / "run-engine.sqlite3")
+    worker_id = f"legacy-pipeline-{os.getpid()}"
+    lease = lease_store.acquire("local-94gb-gpu", worker_id, ttl_seconds=GPU_LEASE_TTL_SECONDS)
+    if lease is None:
+        log.error("local-94gb-gpu is leased by another worker; skipping run")
+        return
+    try:
+        for repo, pr in _filter(active_repo, active_pr, repos):
+            base = pr_dir(runs_dir, repo, pr)
+            if not base.exists():
+                log.warning("skip %s#%d: fetch not run yet", repo.slug, pr)
+                continue
 
-        tasks: dict[str, callable] = {}
-        gito_target = base / "gito.json"
-        pragent_target = base / "pr-agent.json"
+            tasks: dict[str, callable] = {}
+            gito_target = base / "gito.json"
+            pragent_target = base / "pr-agent.json"
 
-        if not gito_target.exists() or force:
-            def _do_gito(_r=repo, _p=pr, _b=base, _t=gito_target):
-                return _run_gito(_r, _p, _b, _t)
+            if not gito_target.exists() or force:
+                def _do_gito(_r=repo, _p=pr, _b=base, _t=gito_target):
+                    return _run_gito(_r, _p, _b, _t)
 
-            tasks["gito"] = _do_gito
-        if not pragent_target.exists() or force:
-            def _do_pragent(_b=base, _t=pragent_target):
-                return _run_pragent(_b, _t)
+                tasks["gito"] = _do_gito
+            if not pragent_target.exists() or force:
+                def _do_pragent(_b=base, _t=pragent_target):
+                    return _run_pragent(_b, _t)
 
-            tasks["pr-agent"] = _do_pragent
+                tasks["pr-agent"] = _do_pragent
 
-        if not tasks:
-            continue
+            if not tasks:
+                continue
 
-        # Both adapters use the shared local model endpoint. Running them in
-        # parallel oversubscribes the one-GPU profile and invalidates timings.
-        for name, task in tasks.items():
-            try:
-                task()
-                log.info("%s completed for %s#%d", name, repo.slug, pr)
-            except Exception as exc:  # noqa: BLE001
-                _log_fail(base, f"run:{name}", exc)
+            # Both adapters use the shared local model endpoint. Running them in
+            # parallel oversubscribes the one-GPU profile and invalidates timings.
+            for name, task in tasks.items():
+                if not lease.renew(ttl_seconds=GPU_LEASE_TTL_SECONDS):
+                    log.error("lost local-94gb-gpu lease; stopping run")
+                    return
+                try:
+                    task()
+                    log.info("%s completed for %s#%d", name, repo.slug, pr)
+                except Exception as exc:  # noqa: BLE001
+                    _log_fail(base, f"run:{name}", exc)
+    finally:
+        lease.release()
 
 
 def _run_gito(repo: RepoConfig, pr: int, base: Path, target: Path) -> None:

@@ -15,6 +15,7 @@ from .validator import (
     CorpusValidationError,
     CorpusValidationReport,
     RunnerInput,
+    compute_suite_content_digest,
     materialize_review_input,
     validate_public_corpus,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "RunnerInput",
     "UsefulnessAssessment",
     "assess_findings",
+    "compute_suite_content_digest",
     "load_assessments",
     "materialize_review_input",
     "ProtectedDefectLabel",

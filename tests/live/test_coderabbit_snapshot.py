@@ -91,6 +91,7 @@ def test_captures_only_coderabbit_comments_for_the_observations_head(tmp_path) -
     )
     matching = {
         "commit_id": observation.head_sha,
+        "user": {"login": "coderabbitai[bot]"},
         "id": 1,
         "path": "src/service.py",
         "line": 12,
@@ -102,10 +103,36 @@ def test_captures_only_coderabbit_comments_for_the_observations_head(tmp_path) -
         fetch_comments=lambda _repo, _pr: [stale, matching],
     )
 
-    result = capture.capture(observation)
+    result = capture.capture(observation, elapsed_minutes=30, wait_minutes=30)
 
-    assert result is not None
-    assert [finding.title for finding in result.snapshot.findings] == ["Valid finding"]
+    assert result.status == "captured"
+    assert [finding.title for finding in result.result.snapshot.findings] == ["Valid finding"]
+
+
+def test_ignores_a_matching_head_comment_from_another_author(tmp_path) -> None:
+    observation = LivePRSnapshot(
+        repository="haexmas/holzi",
+        pr_number=27,
+        base_sha="a" * 40,
+        head_sha="b" * 40,
+        diff_sha256="c" * 64,
+    )
+    spoofed = {
+        "commit_id": observation.head_sha,
+        "user": {"login": "someone-else"},
+        "id": 1,
+        "path": "src/service.py",
+        "line": 12,
+        "body": "<!-- cr-indicator-types:potential_issue -->\n_bug_ | _major_ | _\n**Spoofed finding**\nDetails",
+    }
+    capture = CodeRabbitBaselineCapture(
+        LiveObservationStore(tmp_path),
+        fetch_comments=lambda _repo, _pr: [spoofed],
+    )
+
+    result = capture.capture(observation, elapsed_minutes=30, wait_minutes=30)
+
+    assert result.status == "unavailable"
 
 
 def test_keeps_the_baseline_unavailable_when_no_comment_matches_the_head(tmp_path) -> None:
@@ -121,4 +148,26 @@ def test_keeps_the_baseline_unavailable_when_no_comment_matches_the_head(tmp_pat
         fetch_comments=lambda _repo, _pr: [{"commit_id": "d" * 40}],
     )
 
-    assert capture.capture(observation) is None
+    result = capture.capture(observation, elapsed_minutes=30, wait_minutes=30)
+
+    assert result.status == "unavailable"
+
+
+def test_waits_for_the_full_window_before_checking_github_at_all(tmp_path) -> None:
+    observation = LivePRSnapshot(
+        repository="haexmas/holzi",
+        pr_number=27,
+        base_sha="a" * 40,
+        head_sha="b" * 40,
+        diff_sha256="c" * 64,
+    )
+
+    def _fail(_repo: str, _pr: int) -> list[dict]:
+        raise AssertionError("must not check GitHub before the wait window closes")
+
+    capture = CodeRabbitBaselineCapture(LiveObservationStore(tmp_path), fetch_comments=_fail)
+
+    result = capture.capture(observation, elapsed_minutes=5, wait_minutes=30)
+
+    assert result.status == "waiting"
+    assert result.result is None

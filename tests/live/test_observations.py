@@ -39,3 +39,22 @@ def test_records_a_new_observation_when_the_base_changes_for_the_same_head(tmp_p
     assert first.created is True
     assert second.created is True
     assert second.observation.id != first.observation.id
+
+
+def test_transitions_the_observations_lifecycle_state_without_changing_its_identity(tmp_path) -> None:
+    snapshot = LivePRSnapshot(
+        repository="haexmas/holzi",
+        pr_number=27,
+        base_sha="a" * 40,
+        head_sha="b" * 40,
+        diff_sha256="c" * 64,
+    )
+    store = LiveObservationStore(tmp_path)
+    recorded = store.record(snapshot)
+
+    updated = store.transition_state(snapshot, "running_challengers")
+
+    assert updated.state == "running_challengers"
+    assert updated.id == recorded.observation.id
+    assert updated.created_at == recorded.observation.created_at
+    assert store.record(snapshot).observation.state == "running_challengers"

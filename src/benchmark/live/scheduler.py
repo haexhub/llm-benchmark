@@ -61,12 +61,20 @@ class LiveChallengerScheduler:
         self,
         snapshot: LivePRSnapshot,
         challengers: Mapping[str, Callable[[LivePRSnapshot], None]],
+        *,
+        before_each: Callable[[], bool] | None = None,
     ) -> list[LiveChallengerAttempt]:
-        """Run requested challengers in stable order under the caller's resource lease."""
+        """Run requested challengers in stable order under the caller's resource lease.
+
+        ``before_each``, when given, is called before every challenger; if it
+        returns false (e.g. a lease renewal failed), no further challengers run.
+        """
         attempts: list[LiveChallengerAttempt] = []
         canonical_order = [name for name in ("gito", "pr-agent") if name in challengers]
         remaining = sorted(set(challengers) - set(canonical_order))
         for challenger_name in [*canonical_order, *remaining]:
+            if before_each is not None and not before_each():
+                break
             attempts.append(self._run_one(challenger_name, challengers[challenger_name], snapshot))
         return attempts
 

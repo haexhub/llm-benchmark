@@ -33,6 +33,13 @@
             "required": ["curator_id", "reviewed_at", "evidence_digest"],
             "properties": {"reviewer_count": {"const": 1}}
           }
+        },
+        {
+          "if": {"properties": {"state": {"enum": ["approved", "adjudicated"]}}},
+          "then": {
+            "required": ["curator_id", "reviewed_at", "evidence_digest"],
+            "properties": {"reviewer_count": {"minimum": 1}}
+          }
         }
       ]
     }

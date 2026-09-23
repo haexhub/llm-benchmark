@@ -35,7 +35,13 @@ def test_assesses_a_confirmed_finding_as_a_gold_match() -> None:
         affected_scope=[{"file": "src/paging.py", "line_start": 3, "line_end": 4}],
         impact="Zero violates the pagination contract.",
         reproducer_id="rejects-zero-page-size",
-        approval={"reviewer_count": 2, "state": "approved"},
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
     )
 
     assessments = assess_findings(
@@ -79,7 +85,13 @@ def test_marks_a_second_confirmed_finding_for_the_same_gold_defect_as_duplicate(
         affected_scope=[{"file": "src/paging.py", "line_start": 3, "line_end": 4}],
         impact="Zero violates the pagination contract.",
         reproducer_id="rejects-zero-page-size",
-        approval={"reviewer_count": 2, "state": "approved"},
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
     )
 
     assessments = assess_findings(
@@ -123,7 +135,13 @@ def test_reports_false_positives_and_unmatched_gold_separately() -> None:
         affected_scope=[{"file": "src/paging.py", "line_start": 3, "line_end": 4}],
         impact="Zero violates the pagination contract.",
         reproducer_id="rejects-zero-page-size",
-        approval={"reviewer_count": 2, "state": "approved"},
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
     )
 
     assessments = assess_findings(
@@ -164,7 +182,13 @@ def test_keeps_insufficient_evidence_out_of_true_and_false_counts() -> None:
         affected_scope=[{"file": "src/paging.py", "line_start": 3, "line_end": 4}],
         impact="Zero violates the pagination contract.",
         reproducer_id="rejects-zero-page-size",
-        approval={"reviewer_count": 2, "state": "approved"},
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
     )
 
     assessments = assess_findings(
@@ -229,7 +253,13 @@ def test_rejects_an_assessment_batch_that_leaves_a_finding_undecided() -> None:
         affected_scope=[{"file": "src/paging.py", "line_start": 3, "line_end": 4}],
         impact="Zero violates the pagination contract.",
         reproducer_id="rejects-zero-page-size",
-        approval={"reviewer_count": 2, "state": "approved"},
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
     )
 
     with pytest.raises(CorpusValidationError, match="exactly one decision"):

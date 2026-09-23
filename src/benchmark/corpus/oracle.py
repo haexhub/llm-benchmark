@@ -43,6 +43,12 @@ class LabelApproval(BaseModel):
             raise ValueError(
                 "self_reviewed labels require one curator plus reviewed_at and evidence_digest"
             )
+        if self.state in {"approved", "adjudicated"} and (
+            self.reviewer_count < 1 or any(field is None for field in audit_fields)
+        ):
+            raise ValueError(
+                f"{self.state} labels require at least one reviewer plus reviewed_at and evidence_digest"
+            )
         return self
 
     @property

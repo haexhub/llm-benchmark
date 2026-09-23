@@ -3,11 +3,10 @@
   "title": "ReviewCorpusItemManifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "partition", "kind", "source", "approval_ref", "bundle_sha256", "base_sha", "head_sha", "language", "diff_size_bucket", "difficulty"],
+  "required": ["id", "partition", "source", "approval_ref", "bundle_sha256", "base_sha", "head_sha", "language", "diff_size_bucket", "difficulty"],
   "properties": {
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"},
     "partition": {"enum": ["development", "calibration", "holdout"]},
-    "kind": {"enum": ["clean", "seeded"]},
     "source": {"enum": ["public", "internal_deidentified", "synthetic"]},
     "approval_ref": {"type": "string", "minLength": 1},
     "bundle_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

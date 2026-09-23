@@ -21,7 +21,13 @@ def test_scores_recall_separately_for_each_gold_category() -> None:
         affected_scope=[{"file": "src/paging.py"}],
         impact="Zero violates the pagination contract.",
         reproducer_id="rejects-zero-page-size",
-        approval={"reviewer_count": 2, "state": "approved"},
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
     )
     security_defect = ProtectedDefectLabel(
         id="def-protocol-downgrade",
@@ -30,7 +36,13 @@ def test_scores_recall_separately_for_each_gold_category() -> None:
         affected_scope=[{"file": "src/redirect.ts"}],
         impact="HTTP downgrades a trusted HTTPS origin.",
         reproducer_id="rejects-protocol-downgrade",
-        approval={"reviewer_count": 2, "state": "approved"},
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
     )
     assessments = [
         FindingAssessment(
@@ -67,7 +79,13 @@ def test_counts_duplicates_and_false_positives_as_attention_noise() -> None:
         affected_scope=[{"file": "src/paging.py"}],
         impact="Zero violates the pagination contract.",
         reproducer_id="rejects-zero-page-size",
-        approval={"reviewer_count": 2, "state": "approved"},
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
     )
     assessments = [
         FindingAssessment(
@@ -108,7 +126,13 @@ def test_reports_useful_high_value_findings_per_attention_unit() -> None:
         affected_scope=[{"file": "src/paging.py"}],
         impact="Zero violates the pagination contract.",
         reproducer_id="rejects-zero-page-size",
-        approval={"reviewer_count": 2, "state": "approved"},
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
     )
     assessments = [
         FindingAssessment(
@@ -150,6 +174,56 @@ def test_reports_useful_high_value_findings_per_attention_unit() -> None:
     assert scorecard.useful_high_value_count == 1
     assert scorecard.attention_cost_total == 4
     assert scorecard.useful_high_value_per_attention_unit == 0.25
+
+
+def test_withholds_the_attention_ratio_when_a_finding_has_no_usefulness_assessment() -> None:
+    defect = ProtectedDefectLabel(
+        id="def-page-size-zero",
+        category="correctness",
+        severity="minor",
+        affected_scope=[{"file": "src/paging.py"}],
+        impact="Zero violates the pagination contract.",
+        reproducer_id="rejects-zero-page-size",
+        approval={
+            "reviewer_count": 2,
+            "state": "approved",
+            "curator_id": "operator",
+            "reviewed_at": "2026-09-22T00:00:00+00:00",
+            "evidence_digest": "a" * 64,
+        },
+    )
+    assessments = [
+        FindingAssessment(
+            finding_id=uuid4(),
+            gold_defect_id=defect.id,
+            outcome="matched",
+            evidence="Confirmed evidence.",
+            evaluator_version="review-eval-v1",
+            usefulness=UsefulnessAssessment(
+                correctness_source="gold_label",
+                actionability=2,
+                severity_calibration="calibrated",
+                redundant=False,
+                attention_cost=1,
+                assessor_kind="human",
+                assessor_version="rubric-v1",
+            ),
+        ),
+        FindingAssessment(
+            finding_id=uuid4(),
+            gold_defect_id=None,
+            outcome="false_positive",
+            evidence="No Gold evidence.",
+            evaluator_version="review-eval-v1",
+            # Never rubric-assessed: must not be dropped from the denominator.
+        ),
+    ]
+
+    scorecard = build_review_scorecard([defect], assessments, reviewed_item_count=1)
+
+    assert scorecard.useful_high_value_count == 1
+    assert scorecard.attention_cost_total == 1
+    assert scorecard.useful_high_value_per_attention_unit is None
 
 
 def test_refuses_to_score_a_pending_gold_label() -> None:

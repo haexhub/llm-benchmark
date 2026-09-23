@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -13,6 +15,28 @@ from benchmark.models import Finding
 
 if TYPE_CHECKING:
     from .scheduler import ChallengerResultRecordResult, LiveChallengerResult
+
+
+def _publish_once(destination: Path, content: str) -> bool:
+    """Atomically publish a complete artifact; return False without changes if it exists."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    tmp_path.write_text(content)
+    try:
+        os.link(tmp_path, destination)
+    except FileExistsError:
+        return False
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return True
+
+
+def _publish_replacing(destination: Path, content: str) -> None:
+    """Atomically replace an artifact; never expose a partially written file."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    tmp_path.write_text(content)
+    os.replace(tmp_path, destination)
 
 
 class LivePRSnapshot(BaseModel):
@@ -90,13 +114,27 @@ class LiveObservationStore:
             created_at=datetime.now(UTC),
         )
         destination = self._path_for(snapshot)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with destination.open("x") as output:
-                output.write(observation.model_dump_json(indent=2) + "\n")
-        except FileExistsError:
+        if not _publish_once(destination, observation.model_dump_json(indent=2) + "\n"):
             return ObservationRecordResult(observation=self._load(destination), created=False)
         return ObservationRecordResult(observation=observation, created=True)
+
+    def transition_state(
+        self,
+        snapshot: LivePRSnapshot,
+        state: Literal[
+            "running_challengers", "complete", "baseline_incomplete", "challenger_failed"
+        ],
+    ) -> LivePRObservation:
+        """Update the observation's lifecycle state; the one field that isn't write-once.
+
+        The revision identity (snapshot, id) never changes; only this field does,
+        as the observation moves through queued -> running_challengers -> a
+        terminal state.
+        """
+        destination = self._path_for(snapshot)
+        updated = self._load(destination).model_copy(update={"state": state})
+        _publish_replacing(destination, updated.model_dump_json(indent=2) + "\n")
+        return updated
 
     def record_with_diff(self, snapshot: LivePRSnapshot, diff: str) -> ObservationRecordResult:
         """Persist a diff only when it matches the snapshot's immutable digest."""
@@ -106,8 +144,7 @@ class LiveObservationStore:
         result = self.record(snapshot)
         destination = self.diff_path(snapshot)
         if result.created:
-            with destination.open("x") as output:
-                output.write(diff)
+            _publish_once(destination, diff)
         elif not destination.is_file() or hashlib.sha256(destination.read_bytes()).hexdigest() != actual_digest:
             raise ValueError("Existing observation has no matching immutable diff artifact")
         return result
@@ -124,10 +161,7 @@ class LiveObservationStore:
             raise ValueError("CodeRabbit snapshot Head SHA does not match the observation")
         self.record(observation)
         destination = self.coderabbit_path(observation)
-        try:
-            with destination.open("x") as output:
-                output.write(baseline.model_dump_json(indent=2) + "\n")
-        except FileExistsError:
+        if not _publish_once(destination, baseline.model_dump_json(indent=2) + "\n"):
             return CodeRabbitSnapshotRecordResult(
                 snapshot=CodeRabbitSnapshot.model_validate_json(destination.read_text()),
                 created=False,
@@ -158,10 +192,7 @@ class LiveObservationStore:
             raise ValueError("Unknown live challenger")
         self.record(observation)
         destination = self.challenger_path(observation, attempt.challenger)
-        try:
-            with destination.open("x") as output:
-                output.write(result.model_dump_json(indent=2) + "\n")
-        except FileExistsError:
+        if not _publish_once(destination, result.model_dump_json(indent=2) + "\n"):
             return ChallengerResultRecordResult(
                 result=LiveChallengerResult.model_validate_json(destination.read_text()),
                 created=False,

@@ -146,14 +146,15 @@ ideal review wording into labels. Require the reproducer to demonstrate the
 failure or a deterministic static invariant; record why the defect is reviewable
 from the available diff/context.
 
-Each fixture must be independently reviewed by two maintainers who do not see
-the candidate outputs. Resolve disagreement in an append-only adjudication
-record with reviewer IDs (pseudonymous identifiers are sufficient), date and
-decision. Add at least one label-independent reference test for each positive.
+Each fixture must carry an auditable curator self-review (curator ID, timestamp
+and evidence digest) or a recorded adjudication; neither reviewer sees the
+candidate outputs. Resolve disagreement in an append-only adjudication record
+with reviewer IDs (pseudonymous identifiers are sufficient), date and decision.
+Add at least one label-independent reference test for each positive.
 
 **Verify**: `benchmark.corpus validate` refuses missing reproduction evidence,
 duplicate defect IDs, line scopes outside the pinned revision, and positives
-without two-reviewer/adjudication metadata.
+without self-review/approval/adjudication audit metadata.
 
 ### Step 4: Implement deterministic validation and evaluator input mapping
 

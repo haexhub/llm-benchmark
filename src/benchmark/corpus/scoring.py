@@ -80,10 +80,15 @@ def build_review_scorecard(
     )
     attention_count = overall.matched_gold_count + duplicate_count + false_positive_count
     precision = overall.matched_gold_count / attention_count if attention_count else None
-    usefulness_assessments = [
-        assessment.usefulness for assessment in assessments if assessment.usefulness is not None
-    ]
-    attention_cost_total = sum(assessment.attention_cost for assessment in usefulness_assessments)
+    finding_assessments = [assessment for assessment in assessments if assessment.finding_id is not None]
+    attention_cost_total = sum(
+        assessment.usefulness.attention_cost
+        for assessment in finding_assessments
+        if assessment.usefulness is not None
+    )
+    attention_cost_complete = bool(finding_assessments) and all(
+        assessment.usefulness is not None for assessment in finding_assessments
+    )
     useful_high_value_count = sum(
         assessment.outcome == "matched"
         and assessment.usefulness is not None
@@ -107,7 +112,9 @@ def build_review_scorecard(
         attention_cost_total=attention_cost_total,
         useful_high_value_count=useful_high_value_count,
         useful_high_value_per_attention_unit=(
-            useful_high_value_count / attention_cost_total if attention_cost_total else None
+            useful_high_value_count / attention_cost_total
+            if attention_cost_complete and attention_cost_total
+            else None
         ),
     )
 

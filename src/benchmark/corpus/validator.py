@@ -8,7 +8,7 @@ import subprocess
 import tarfile
 from dataclasses import dataclass
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from typing import Annotated, Literal
 
@@ -18,6 +18,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 class CorpusValidationError(ValueError):
     """Raised when a public corpus fixture is incomplete or unreproducible."""
+
+
+_FORBIDDEN_NAMES = {"ground-truth.yaml", "ground_truth.yaml", "oracle.yaml"}
+_FORBIDDEN_DIRECTORIES = {"reproducers", "reference", "oracle"}
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,15 @@ class RunnerInput:
     policy_file: Path
 
 
+class SuiteManifest(BaseModel):
+    """The executable subset of the published public suite-manifest contract."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    id: Annotated[str, Field(min_length=1)]
+    content_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
 class ItemManifest(BaseModel):
     """The executable subset of the published public item-manifest contract."""
 
@@ -49,7 +62,6 @@ class ItemManifest(BaseModel):
 
     id: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{2,63}$")]
     partition: Literal["development", "calibration", "holdout"]
-    kind: Literal["clean", "seeded"]
     source: Literal["public", "internal_deidentified", "synthetic"]
     approval_ref: Annotated[str, Field(min_length=1)]
     bundle_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -72,6 +84,7 @@ def validate_public_corpus(corpus_root: Path) -> CorpusValidationReport:
         raise CorpusValidationError(f"Missing item directory: {items_directory}")
 
     item_ids: list[str] = []
+    item_digests: list[tuple[str, str]] = []
     for item_directory in sorted(path for path in items_directory.iterdir() if path.is_dir()):
         manifest = _load_manifest(item_directory / "manifest.yaml", item_directory.name)
         item_id = manifest.id
@@ -90,7 +103,9 @@ def validate_public_corpus(corpus_root: Path) -> CorpusValidationReport:
             item_id,
         )
         item_ids.append(item_id)
+        item_digests.append((item_id, manifest.bundle_sha256))
 
+    _validate_suite_manifest(suite_file, corpus_root.name, item_digests)
     return CorpusValidationReport(item_ids=tuple(item_ids))
 
 
@@ -98,6 +113,31 @@ def _validate_bundle_digest(bundle: Path, expected_digest: str, item_id: str) ->
     actual_digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
     if actual_digest != expected_digest:
         raise CorpusValidationError(f"{item_id}: bundle_sha256 does not match repo.bundle")
+
+
+def _validate_suite_manifest(
+    suite_file: Path, expected_id: str, item_digests: list[tuple[str, str]]
+) -> None:
+    try:
+        document = yaml.safe_load(suite_file.read_text())
+    except yaml.YAMLError as error:
+        raise CorpusValidationError(f"Invalid suite manifest YAML: {suite_file}") from error
+    if not isinstance(document, dict):
+        raise CorpusValidationError(f"Suite manifest must be a YAML mapping: {suite_file}")
+    try:
+        suite = SuiteManifest.model_validate(document)
+    except ValidationError as error:
+        raise CorpusValidationError(f"Suite manifest violates contract: {error}") from error
+    if suite.id != expected_id:
+        raise CorpusValidationError("Suite manifest id must match its directory name")
+    if suite.content_digest != compute_suite_content_digest(item_digests):
+        raise CorpusValidationError("Suite manifest content_digest does not match its items")
+
+
+def compute_suite_content_digest(item_digests: list[tuple[str, str]]) -> str:
+    """Return the deterministic content digest of a suite's (item_id, bundle_sha256) pairs."""
+    content = "\n".join(f"{item_id}:{bundle_sha256}" for item_id, bundle_sha256 in sorted(item_digests))
+    return hashlib.sha256(content.encode()).hexdigest()
 
 
 def materialize_review_input(corpus_root: Path, item_id: str, output_directory: Path) -> RunnerInput:
@@ -121,6 +161,10 @@ def materialize_review_input(corpus_root: Path, item_id: str, output_directory: 
             checkout = Path(checkout_directory) / "repo"
             _run_git("clone", "--quiet", str(item_directory / "repo.bundle"), str(checkout), item_id=item_id)
             _extract_commit(checkout, manifest.head_sha, head_directory, item_id)
+            changed_paths = _git_output(
+                "diff", "--name-only", manifest.base_sha, manifest.head_sha, cwd=checkout, item_id=item_id
+            ).decode(errors="replace").splitlines()
+            _reject_protected_diff_paths(changed_paths, item_id)
             (staging_root / "diff.patch").write_bytes(
                 _git_output("diff", "--binary", manifest.base_sha, manifest.head_sha, cwd=checkout, item_id=item_id)
             )
@@ -141,16 +185,24 @@ def materialize_review_input(corpus_root: Path, item_id: str, output_directory: 
 
 
 def _reject_oracle_material(corpus_root: Path) -> None:
-    forbidden_names = {"ground-truth.yaml", "ground_truth.yaml", "oracle.yaml"}
-    forbidden_directories = {"reproducers", "reference", "oracle"}
     for path in corpus_root.rglob("*"):
-        if path.name in forbidden_names or (
-            path.is_dir() and path.name in forbidden_directories
+        if path.name in _FORBIDDEN_NAMES or (
+            path.is_dir() and path.name in _FORBIDDEN_DIRECTORIES
         ):
             relative_path = path.relative_to(corpus_root)
             raise CorpusValidationError(
                 f"Public corpus contains oracle material: {relative_path}"
             )
+
+
+def _reject_protected_diff_paths(paths: list[str], item_id: str) -> None:
+    """Reject a diff that touches a protected path, including one deleted in Head."""
+    for raw_path in paths:
+        parts = PurePosixPath(raw_path).parts
+        if not parts:
+            continue
+        if parts[-1] in _FORBIDDEN_NAMES or any(part in _FORBIDDEN_DIRECTORIES for part in parts[:-1]):
+            raise CorpusValidationError(f"{item_id}: diff touches protected path {raw_path}")
 
 
 def _load_manifest(manifest_file: Path, item_name: str) -> ItemManifest:

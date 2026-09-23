@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from benchmark.live import (
@@ -7,6 +9,7 @@ from benchmark.live import (
     LiveObservationStore,
     LivePRSnapshot,
     LiveShadowRunner,
+    ResourceLease,
     ResourceUnavailable,
     SqliteResourceLeaseStore,
 )
@@ -80,6 +83,64 @@ def test_retains_a_failed_attempt_without_blocking_the_next_challenger(tmp_path)
 
 def _raise_endpoint_error(_snapshot: LivePRSnapshot) -> list[Finding]:
     raise RuntimeError("endpoint unavailable")
+
+
+def test_persists_the_result_before_releasing_the_lease(tmp_path) -> None:
+    observation = LivePRSnapshot(
+        repository="haexmas/holzi",
+        pr_number=27,
+        base_sha="a" * 40,
+        head_sha="b" * 40,
+        diff_sha256="c" * 64,
+    )
+    store = LiveObservationStore(tmp_path / "observations")
+    runner = LiveShadowRunner(
+        store,
+        LiveChallengerScheduler(),
+        SqliteResourceLeaseStore(tmp_path / "run-engine.sqlite3"),
+        worker_id="worker-a",
+    )
+    seen_recorded_before_release: list[bool] = []
+    original_release = ResourceLease.release
+
+    def spy_release(self: ResourceLease) -> None:
+        seen_recorded_before_release.append(
+            store.load_challenger_result(observation, "gito") is not None
+        )
+        original_release(self)
+
+    with patch.object(ResourceLease, "release", spy_release):
+        runner.run(observation, {"gito": lambda _snapshot: []})
+
+    assert seen_recorded_before_release == [True]
+
+
+def test_renews_the_lease_between_challengers_and_stops_if_renewal_fails(tmp_path) -> None:
+    observation = LivePRSnapshot(
+        repository="haexmas/holzi",
+        pr_number=27,
+        base_sha="a" * 40,
+        head_sha="b" * 40,
+        diff_sha256="c" * 64,
+    )
+    store = LiveObservationStore(tmp_path / "observations")
+    runner = LiveShadowRunner(
+        store,
+        LiveChallengerScheduler(),
+        SqliteResourceLeaseStore(tmp_path / "run-engine.sqlite3"),
+        worker_id="worker-a",
+    )
+
+    with patch.object(ResourceLease, "renew", return_value=False) as renew:
+        results = runner.run(
+            observation,
+            {"gito": lambda _snapshot: [], "pr-agent": lambda _snapshot: []},
+        )
+
+    renew.assert_called_once()
+    assert results == []
+    assert store.load_challenger_result(observation, "gito") is None
+    assert store.load_challenger_result(observation, "pr-agent") is None
 
 
 def test_does_not_run_a_local_challenger_without_the_gpu_lease(tmp_path) -> None:

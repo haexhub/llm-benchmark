@@ -14,10 +14,12 @@ review-corpus/<suite>/<version>/
 This public package lives in
 [`haexhub/llm-benchmark-review-corpus`](https://github.com/haexhub/llm-benchmark-review-corpus).
 
-`manifest.yaml` contains opaque item ID, partition, clean/seeded status, source
-class, approval reference, Base/Head SHA, language, diff-size and difficulty
-bucket. It never contains labels, reference fixes, reproducer commands or hidden
-paths.
+`manifest.yaml` contains opaque item ID, partition, source class, approval
+reference, Base/Head SHA, language, diff-size and difficulty bucket. It never
+contains labels, reference fixes, reproducer commands or hidden paths — nor
+clean/seeded status, which a runner could use to suppress findings on known-clean
+items. That status is derived from the protected package: an item with zero
+decision-ready Gold defect labels is a clean control.
 
 ## Protected Oracle package
 
