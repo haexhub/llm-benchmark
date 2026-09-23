@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .oracle import validate_protected_defect_label
 from .validator import CorpusValidationError
@@ -35,7 +36,7 @@ class _ManifestOnly(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    id: str
+    id: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{2,63}$")]
     partition: str
     source: str
     language: str
@@ -71,6 +72,8 @@ def build_coverage_matrix(corpus_root: Path, oracle_root: Path) -> CoverageMatri
     items_dir = corpus_root / "items"
     if not items_dir.is_dir():
         raise CorpusValidationError(f"Missing item directory: {items_dir}")
+    if not oracle_root.is_dir():
+        raise CorpusValidationError(f"Missing Oracle directory: {oracle_root}")
 
     counters: dict[str, Counter[str]] = {
         "language": Counter(),
@@ -89,6 +92,10 @@ def build_coverage_matrix(corpus_root: Path, oracle_root: Path) -> CoverageMatri
 
     for item_dir in sorted(path for path in items_dir.iterdir() if path.is_dir()):
         manifest = _load_manifest_for_coverage(item_dir / "manifest.yaml")
+        if manifest.id != item_dir.name:
+            raise CorpusValidationError(
+                f"{item_dir.name}: manifest id must match its directory name"
+            )
         item_count += 1
         counters["language"][manifest.language] += 1
         counters["partition"][manifest.partition] += 1
@@ -96,7 +103,7 @@ def build_coverage_matrix(corpus_root: Path, oracle_root: Path) -> CoverageMatri
         counters["diff_size_bucket"][manifest.diff_size_bucket] += 1
         counters["difficulty"][manifest.difficulty] += 1
 
-        label_file = oracle_root / manifest.id / "ground-truth.yaml"
+        label_file = oracle_root / item_dir.name / "ground-truth.yaml"
         if not label_file.is_file():
             clean_count += 1
             continue
@@ -135,8 +142,14 @@ def build_coverage_matrix(corpus_root: Path, oracle_root: Path) -> CoverageMatri
 def _load_manifest_for_coverage(manifest_file: Path) -> _ManifestOnly:
     if not manifest_file.is_file():
         raise CorpusValidationError(f"Missing manifest: {manifest_file}")
-    document = yaml.safe_load(manifest_file.read_text())
-    return _ManifestOnly.model_validate(document)
+    try:
+        document = yaml.safe_load(manifest_file.read_text())
+    except yaml.YAMLError as error:
+        raise CorpusValidationError(f"Invalid manifest YAML: {manifest_file}") from error
+    try:
+        return _ManifestOnly.model_validate(document)
+    except ValidationError as error:
+        raise CorpusValidationError(f"Manifest violates contract: {manifest_file}") from error
 
 
 __all__ = ["CoverageMatrix", "build_coverage_matrix"]

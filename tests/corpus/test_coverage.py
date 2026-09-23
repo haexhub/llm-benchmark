@@ -4,11 +4,16 @@ import hashlib
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
 from benchmark.cli import app
-from benchmark.corpus import build_coverage_matrix, compute_suite_content_digest
+from benchmark.corpus import (
+    CorpusValidationError,
+    build_coverage_matrix,
+    compute_suite_content_digest,
+)
 
 
 def _run_git(*args: str, cwd: Path) -> str:
@@ -127,12 +132,47 @@ def test_counts_a_seeded_item_and_its_label_dimensions(tmp_path: Path) -> None:
 def test_lists_zero_count_strata_as_missing(tmp_path: Path) -> None:
     corpus_root = create_valid_corpus(tmp_path)
     oracle_root = tmp_path / "oracle"
+    oracle_root.mkdir()
 
     matrix = build_coverage_matrix(corpus_root, oracle_root)
 
     assert "language=typescript" in matrix.missing_strata
     assert "category=performance" in matrix.missing_strata
     assert "language=python" not in matrix.missing_strata
+
+
+def test_rejects_a_missing_oracle_directory(tmp_path: Path) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+
+    with pytest.raises(CorpusValidationError, match="Missing Oracle directory"):
+        build_coverage_matrix(corpus_root, tmp_path / "missing-oracle")
+
+
+def test_binds_oracle_lookup_to_item_directory(tmp_path: Path) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    item_manifest = corpus_root / "items" / "demo-item" / "manifest.yaml"
+    document = yaml.safe_load(item_manifest.read_text())
+    document["id"] = "other-item"
+    item_manifest.write_text(yaml.safe_dump(document, sort_keys=False))
+    oracle_root = tmp_path / "oracle"
+    _write_label(oracle_root, "other-item")
+
+    with pytest.raises(CorpusValidationError, match="manifest id must match"):
+        build_coverage_matrix(corpus_root, oracle_root)
+
+
+@pytest.mark.parametrize("manifest_text", ["id: demo-item\n", "id: [invalid\n"])
+def test_converts_invalid_manifest_to_corpus_validation_error(
+    tmp_path: Path, manifest_text: str
+) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    manifest_file = corpus_root / "items" / "demo-item" / "manifest.yaml"
+    manifest_file.write_text(manifest_text)
+    oracle_root = tmp_path / "oracle"
+    oracle_root.mkdir()
+
+    with pytest.raises(CorpusValidationError):
+        build_coverage_matrix(corpus_root, oracle_root)
 
 
 def test_cli_renders_a_coverage_report(tmp_path: Path, monkeypatch) -> None:
