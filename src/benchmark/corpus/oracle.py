@@ -122,7 +122,10 @@ def record_curator_approval(
         "reviewed_at": datetime.now(UTC).isoformat(),
         "evidence_digest": evidence_digest,
     }
-    updated = ProtectedDefectLabel.model_validate(document)
+    try:
+        updated = ProtectedDefectLabel.model_validate(document)
+    except ValidationError as error:
+        raise CorpusValidationError(f"Protected defect label approval is invalid: {error}") from error
     label_file.write_text(yaml.safe_dump(document, sort_keys=False))
     return updated
 
@@ -136,6 +139,11 @@ def validate_defect_label_scope(
         if line_count is None:
             raise CorpusValidationError(
                 f"{item_id}: {label.id} affected_scope file {scope.file} is absent from head_sha"
+            )
+        if scope.line_start is not None and scope.line_start > line_count:
+            raise CorpusValidationError(
+                f"{item_id}: {label.id} affected_scope line_start {scope.line_start} exceeds "
+                f"{scope.file} ({line_count} lines) at head_sha"
             )
         if scope.line_end is not None and scope.line_end > line_count:
             raise CorpusValidationError(

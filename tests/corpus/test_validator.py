@@ -411,6 +411,16 @@ def test_rejects_a_defect_label_scope_line_end_beyond_file_length(tmp_path: Path
         validate_defect_label_scope(item_dir / "repo.bundle", manifest["head_sha"], label, "demo-item")
 
 
+def test_rejects_a_defect_label_scope_line_start_beyond_file_length(tmp_path: Path) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    item_dir = corpus_root / "items" / "demo-item"
+    manifest = yaml.safe_load((item_dir / "manifest.yaml").read_text())
+    label = _demo_label(affected_scope=[{"file": "service.py", "line_start": 99}])
+
+    with pytest.raises(CorpusValidationError, match="line_start 99 exceeds service.py"):
+        validate_defect_label_scope(item_dir / "repo.bundle", manifest["head_sha"], label, "demo-item")
+
+
 def test_records_an_auditable_curator_approval(tmp_path: Path) -> None:
     label_file = tmp_path / "ground-truth.yaml"
     label_file.write_text(

@@ -105,6 +105,33 @@ def test_flags_a_flaky_reproducer_as_non_deterministic(
     assert result.deterministic is False
 
 
+def test_flags_a_reproducer_with_different_output_as_non_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture_root = tmp_path / "fixture"
+    fixture_root.mkdir()
+    reproducer = tmp_path / "reproducer.sh"
+    reproducer.write_text("#!/bin/sh\nset -eu\ntrue\n")
+    outputs = iter(["first\n", "second\n", "first\n"])
+    monkeypatch.setattr(
+        "benchmark.corpus.reproducer.run_protected_reproducer",
+        lambda *_args, **_kwargs: ReproducerResult(
+            passed=True,
+            network_isolated=True,
+            exit_code=0,
+            duration_seconds=0.0,
+            fixture_sha256="a" * 64,
+            stdout=next(outputs),
+            stderr="",
+            timed_out=False,
+        ),
+    )
+
+    result = verify_reproducer_determinism(reproducer, fixture_root, runs=3)
+
+    assert result.deterministic is False
+
+
 def test_records_a_timeout_as_failed_evidence(tmp_path: Path) -> None:
     fixture_root = tmp_path / "fixture"
     fixture_root.mkdir()

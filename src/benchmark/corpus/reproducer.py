@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -98,12 +99,29 @@ def verify_reproducer_determinism(
     if runs < 1:
         raise CorpusValidationError("runs must be at least 1")
     results = [run_protected_reproducer(reproducer, fixture_root) for _ in range(runs)]
-    deterministic = all(result.passed for result in results)
-    digest_source = "\n".join(f"{result.exit_code}:{result.fixture_sha256}" for result in results)
-    evidence_digest = hashlib.sha256(digest_source.encode()).hexdigest()
+    evidence = [_evidence_record(result) for result in results]
+    deterministic = all(result["passed"] for result in evidence) and all(
+        result == evidence[0] for result in evidence[1:]
+    )
+    evidence_digest = hashlib.sha256(
+        json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     return DeterminismResult(
         deterministic=deterministic, run_count=runs, evidence_digest=evidence_digest
     )
+
+
+def _evidence_record(result: ReproducerResult) -> dict[str, object]:
+    """Return the stable outcome fields used to compare repeated executions."""
+    return {
+        "exit_code": result.exit_code,
+        "fixture_sha256": result.fixture_sha256,
+        "network_isolated": result.network_isolated,
+        "passed": result.passed,
+        "stderr": result.stderr,
+        "stdout": result.stdout,
+        "timed_out": result.timed_out,
+    }
 
 
 def _sandbox_command(script_path: Path, fixture_root: Path) -> list[str]:
