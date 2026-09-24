@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import signal
 import sqlite3
 import threading
 from collections.abc import Callable
@@ -307,13 +308,25 @@ def run_attempt(
 
     heartbeat_stop = threading.Event()
     lease_lost = threading.Event()
+    interrupted = threading.Event()
+
+    def _handle_sigterm(signum: int, frame: object) -> None:
+        interrupted.set()
+        lease_lost.set()
+
+    # signal.signal only works on the main thread; run_attempt is only ever
+    # invoked there (the heartbeat renewal below runs on a background thread).
+    previous_sigterm_handler = signal.signal(signal.SIGTERM, _handle_sigterm)
+
     heartbeat = threading.Thread(
         target=_renew_lease_until_stopped,
         args=(lease, heartbeat_stop, lease_lost),
         name=f"runengine-lease-{attempt_id}", daemon=True,
     )
-    heartbeat.start()
+    heartbeat_started = False
     try:
+        heartbeat.start()
+        heartbeat_started = True
         work_dir = workspace_root / str(attempt_id)
         with conn.cursor() as cur:
             cur.execute(
@@ -330,9 +343,10 @@ def run_attempt(
             )
         conn.commit()
 
-        if not lease.renew(ttl_seconds=LEASE_TTL_SECONDS):
-            log.error("lost %s lease mid-attempt %s", RESOURCE_NAME, attempt_id)
-            _mark_terminal(conn, attempt_id, status="failed", reason="lost resource lease")
+        if interrupted.is_set() or not lease.renew(ttl_seconds=LEASE_TTL_SECONDS):
+            reason = "interrupted by signal" if interrupted.is_set() else "lost resource lease"
+            log.error("aborting attempt %s mid-attempt: %s", attempt_id, reason)
+            _mark_terminal(conn, attempt_id, status="failed", reason=reason)
             return None
 
         outcome = executor(
@@ -343,8 +357,9 @@ def run_attempt(
 
         heartbeat_stop.set()
         heartbeat.join()
-        if lease_lost.is_set() or not lease.renew(ttl_seconds=LEASE_TTL_SECONDS):
-            _mark_terminal(conn, attempt_id, status="failed", reason="lost resource lease")
+        if interrupted.is_set() or lease_lost.is_set() or not lease.renew(ttl_seconds=LEASE_TTL_SECONDS):
+            reason = "interrupted by signal" if interrupted.is_set() else "lost resource lease"
+            _mark_terminal(conn, attempt_id, status="failed", reason=reason)
             return None
 
         evaluated_at = datetime.now(UTC)
@@ -362,6 +377,9 @@ def run_attempt(
                     conn, attempt_id=attempt_id, item_id=item_id, oracle_root=oracle_root,
                     findings=outcome.findings, novel_finding_judge=novel_finding_judge,
                 )
+            if interrupted.is_set():
+                _mark_terminal(conn, attempt_id, status="failed", reason="interrupted by signal")
+                return None
             _mark_terminal(conn, attempt_id, status="succeeded", reason=None)
             return outcome
 
@@ -390,9 +408,13 @@ def run_attempt(
         )
         raise
     finally:
-        heartbeat_stop.set()
-        heartbeat.join()
-        lease.release()
+        try:
+            heartbeat_stop.set()
+            if heartbeat_started:
+                heartbeat.join()
+            lease.release()
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm_handler)
 
 
 def _mark_terminal(conn: psycopg.Connection, attempt_id: UUID, *, status: str, reason: str | None) -> None:
