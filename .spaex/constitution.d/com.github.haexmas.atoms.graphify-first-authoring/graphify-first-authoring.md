@@ -27,10 +27,10 @@ It does **not** fire for renames, in-place edits, trivial inline expressions, or
 
 1. **Classify the checkout exactly once, then bootstrap or refresh according to that class** (independent of any git hook running):
    - Apply this mutually exclusive precedence: a **linked worktree** is a checkout whose git directory is managed as a linked worktree; otherwise a **feature branch** is the branch carrying the current change or pull request, even when it has an upstream tracking ref; otherwise the checkout is a **tracked branch**. If the branch role is unclear, classify it as a feature branch.
-   - A linked worktree or feature branch always uses the complete fork-point snapshot as-is. It never participates in current-`HEAD` freshness checks, even when its branch has an upstream remote or is also checked out in a repository that tracks it.
+   - A linked worktree or feature branch always uses the complete fork-point snapshot as-is. Before the first consultation, resolve the fork point with `git merge-base HEAD <base-ref>`, then copy a sibling checkout's or shared cache's `graphify-out/` whose `graph.json` has `built_at_commit` equal to that fork point into the checkout. If no matching snapshot exists, create a temporary detached checkout at the fork point, run `graphify update <temporary-root>` there, and copy its complete `graphify-out/` into the checkout. Never run that provisioning update against the feature branch's advancing `HEAD`.
    - On a tracked branch, if `graphify-out/` or its required `graph.json` is **absent**, run `graphify update <repo-root>` to build the graph before continuing. A directory without `graph.json` is not a usable graph.
-   - On a tracked branch, if `graphify-out/.meta.json` is absent, invalid, or its `indexed_at_sha` does **not** match current `HEAD`, run `graphify update <repo-root>` to refresh incrementally.
-   - On a feature branch or linked worktree, use a complete fork-point snapshot as-is. Do not compare its marker with the feature branch's advancing `HEAD`, and do not refresh it. If the snapshot lacks `graph.json`, warn and continue with the normal consultation failure handling.
+   - On a tracked branch, if `graphify-out/graph.json` is absent, invalid, or its `built_at_commit` does **not** match current `HEAD`, run `graphify update <repo-root>` to refresh incrementally.
+   - On a feature branch or linked worktree, use the provisioned complete fork-point snapshot as-is. Do not compare its marker with the feature branch's advancing `HEAD`, and do not refresh it. If provisioning fails or the snapshot lacks `graph.json`, warn and continue with the normal consultation failure handling.
    - If bootstrap or refresh fails, warn, continue with the consultation/authoring flow, and flag the incomplete refresh for a later manual check. The failure MUST NOT block authoring.
    - These tracked-branch checks hold even when the git hooks are not installed or were bypassed (e.g. `git commit --no-verify`).
 2. **Query the graph** for candidates using plain `graphify` CLI invocations — `graphify query "<intent>"`, `graphify path <from> <to>`, `graphify explain <symbol>`. Do **not** substitute any single harness's slash-command syntax; the rule reads correctly regardless of which harness loads it.
@@ -100,8 +100,8 @@ Rough guidance, not hard cutoffs — operator judgment overrides:
 FR-010 requires this rule's freshness guarantee to hold even when the `post-commit` and `post-checkout` hooks are not installed or have been bypassed:
 
 - **On a tracked branch, absent or incomplete graph** (`graphify-out/` or `graphify-out/graph.json` missing) → bootstrap with `graphify update <repo-root>` before authoring.
-- **On a tracked branch, stale or unmarked graph** (missing/invalid `indexed_at_sha`, or marker ≠ `HEAD`) → refresh with `graphify update <repo-root>` before authoring.
-- **On a feature branch/worktree, incomplete snapshot** → warn and continue with failed-consultation handling; do not run graphify against feature `HEAD`.
+- **On a tracked branch, stale or unmarked graph** (missing/invalid `built_at_commit`, or marker ≠ `HEAD`) → refresh with `graphify update <repo-root>` before authoring.
+- **On a feature branch/worktree, incomplete snapshot** → provision it from a matching fork-point snapshot or a temporary detached fork-point checkout; if that fails, warn and continue with failed-consultation handling. Do not run graphify against feature `HEAD`.
 - **Fresh graph** or a **complete feature-branch snapshot** (intentionally frozen at fork point) → proceed to the consult step.
 
 ## Non-goals of this principle
