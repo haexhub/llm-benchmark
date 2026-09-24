@@ -196,8 +196,36 @@ before any attempt executes.
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T046 [P] Run `quickstart.md` end-to-end against the local docker-compose stack; fix any drift
-- [ ] T047 [P] Full verification: `uv run pytest && uv run pytest -m db && uv run ruff check .` all exit 0
+- [x] T046 [P] Run `quickstart.md` end-to-end against the local docker-compose stack; fix any drift
+- [x] T047 [P] Full verification: `uv run pytest && uv run pytest -m db && uv run ruff check .` all exit 0
+
+Implementation notes:
+- T046 ran every documented command for real (`candidate-register` against a
+  real `gito.bot` install, `plan-create`, `plan-run` against a fake TOOL_LLM
+  endpoint — a genuine transient-vs-non-transient failure path, not a stub —
+  `attempt-list`, `score-show`, `gold-candidates-export`) against a small
+  from-scratch fixture corpus/oracle, not the real 102-item corpus. Found and
+  fixed two real drifts: (1) `quickstart.md`/`contracts/cli.md` still showed
+  the originally-planned `runengine plan create`-style nested subcommands;
+  the actual CLI is flat/hyphenated (`plan-create`) like `corpus
+  approve-label` — docs corrected. (2) `score-show`'s first query selected a
+  nonexistent `candidate_version_id` column on `execution_plan` (which only
+  has the plural `candidate_version_ids` array) — a real bug, not caught by
+  any unit test since none exercised that CLI command directly; fixed, and
+  `--plan`/`--plan-id` flag-name mismatch between docs and code fixed too
+  (`typer.Option("--plan")` explicit now on all three commands taking it).
+- T047: `uv run pytest` → 223 passed, 7 deselected (5 `db`-marked correctly
+  excluded by default addopts, 2 unrelated pre-existing failures — see
+  below). `uv run pytest -m db` → 5 passed. `uv run ruff check .` → clean.
+- Pre-existing, unrelated to this feature: `src/benchmark/reports/` exists in
+  the primary checkout's working tree but was never actually committed to
+  git — breaks `tests/integration/test_idempotency.py`,
+  `tests/live/test_legacy_pipeline_serialization.py`,
+  `tests/unit/test_per_pr_report.py`, `tests/unit/test_summary_stats.py` and
+  one `tests/live/test_cli_ingest.py` test on any fresh clone/worktree
+  (confirmed absent from every branch's history). Not fixed here — out of
+  scope, not caused by this feature, and possibly someone else's in-progress
+  work; flagged to the operator instead.
 
 ---
 

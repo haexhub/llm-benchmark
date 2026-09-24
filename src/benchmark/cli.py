@@ -461,7 +461,7 @@ def runengine_plan_run(
 
 
 @runengine_app.command("attempt-list")
-def runengine_attempt_list(plan_id: Annotated[str, typer.Option()]) -> None:
+def runengine_attempt_list(plan_id: Annotated[str, typer.Option("--plan")]) -> None:
     """Listet alle Attempts eines Plans mit Status/Terminal-Reason."""
     from uuid import UUID
 
@@ -507,7 +507,7 @@ def runengine_attempt_show(attempt_id: Annotated[str, typer.Argument()]) -> None
 
 @runengine_app.command("score-show")
 def runengine_score_show(
-    plan_id: Annotated[str, typer.Option(help="Plan-ID.")],
+    plan_id: Annotated[str, typer.Option("--plan", help="Plan-ID.")],
 ) -> None:
     """Zeigt pro Kandidat Quality-/Operational-Metriken plus das Novel-Findings-Panel (US3)."""
     from uuid import UUID
@@ -520,7 +520,7 @@ def runengine_score_show(
         plan_uuid = UUID(plan_id)
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT candidate_version_id, suite_version_digest, score_policy_version "
+                "SELECT suite_version_digest, score_policy_version "
                 "FROM execution_plan WHERE id = %s",
                 (plan_uuid,),
             )
@@ -528,7 +528,7 @@ def runengine_score_show(
             if plan_row is None:
                 console.print(f"[red]No such plan: {plan_id}[/red]")
                 raise typer.Exit(1)
-            _, suite_version_digest, score_policy_version = plan_row
+            suite_version_digest, score_policy_version = plan_row
             cur.execute(
                 "SELECT DISTINCT candidate_version_id, slug FROM attempt "
                 "JOIN candidate_version ON candidate_version.id = attempt.candidate_version_id "
@@ -580,7 +580,7 @@ def runengine_score_show(
 
 @runengine_app.command("gold-candidates-export")
 def runengine_gold_candidates_export(
-    plan_id: Annotated[str, typer.Option(help="Plan-ID.")],
+    plan_id: Annotated[str, typer.Option("--plan", help="Plan-ID.")],
 ) -> None:
     """Gibt alle `proposed` Gold-Label-Kandidaten eines Plans aus (FR-009b)."""
     from uuid import UUID
