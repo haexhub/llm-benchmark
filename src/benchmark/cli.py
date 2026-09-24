@@ -409,6 +409,10 @@ def runengine_plan_create(
 def runengine_plan_run(
     plan_id: Annotated[str, typer.Argument()],
     suite_dir: Annotated[Path, typer.Option(help="z.B. review-corpus/review-v1")],
+    oracle_dir: Annotated[
+        Path | None,
+        typer.Option(help="Protected Oracle-Verzeichnis (z.B. corpus-oracle/review-v1); ohne wird nicht evaluiert."),
+    ] = None,
 ) -> None:
     """Führt alle `queued` Attempts eines Plans aus (US1/US2)."""
     from uuid import UUID
@@ -440,6 +444,7 @@ def runengine_plan_run(
                 candidate_slug=candidate_version.slug, model=env("TOOL_LLM_MODEL", "unknown"),
                 config_hash=candidate_version.model_endpoint_config_hash,
                 workspace_root=workspace_root, runs_dir=_ctx["runs_dir"],
+                oracle_root=oracle_dir,
             )
             if outcome is None:
                 console.print("[yellow]Resource lease busy — stopping this run.[/yellow]")
@@ -492,6 +497,116 @@ def runengine_attempt_show(attempt_id: Annotated[str, typer.Argument()]) -> None
         raise typer.Exit(1)
     for name, value in zip(columns, row, strict=True):
         console.print(f"{name}: {value}")
+
+
+@runengine_app.command("score-show")
+def runengine_score_show(
+    plan_id: Annotated[str, typer.Option(help="Plan-ID.")],
+) -> None:
+    """Zeigt pro Kandidat Quality-/Operational-Metriken plus das Novel-Findings-Panel (US3)."""
+    from uuid import UUID
+
+    from benchmark.runengine.db import connect
+    from benchmark.runengine.scoring import compute_operational_metrics, compute_scores
+
+    conn = connect()
+    try:
+        plan_uuid = UUID(plan_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT candidate_version_id, suite_version_digest, score_policy_version "
+                "FROM execution_plan WHERE id = %s",
+                (plan_uuid,),
+            )
+            plan_row = cur.fetchone()
+            if plan_row is None:
+                console.print(f"[red]No such plan: {plan_id}[/red]")
+                raise typer.Exit(1)
+            _, suite_version_digest, score_policy_version = plan_row
+            cur.execute(
+                "SELECT DISTINCT candidate_version_id, slug FROM attempt "
+                "JOIN candidate_version ON candidate_version.id = attempt.candidate_version_id "
+                "WHERE plan_id = %s",
+                (plan_uuid,),
+            )
+            candidates = cur.fetchall()
+
+        for candidate_version_id, slug in candidates:
+            metrics = compute_scores(conn, plan_id=plan_uuid, candidate_version_id=candidate_version_id)
+            operational = compute_operational_metrics(
+                conn, plan_id=plan_uuid, candidate_version_id=candidate_version_id
+            )
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT nfr.verdict, count(*) FROM novel_finding_review nfr
+                    JOIN evaluation e ON e.id = nfr.evaluation_id
+                    JOIN attempt a ON a.id = e.attempt_id
+                    WHERE a.plan_id = %s AND a.candidate_version_id = %s
+                    GROUP BY nfr.verdict
+                    """,
+                    (plan_uuid, candidate_version_id),
+                )
+                novel_counts = dict(cur.fetchall())
+
+            console.print(f"\n[bold]{slug}[/bold] ({candidate_version_id})")
+            console.print(f"  suite_version_digest: sha256:{suite_version_digest}")
+            console.print(f"  score_policy_version: {score_policy_version}")
+            for name, metric in metrics.items():
+                spread = (
+                    f" [range {metric.range_min:.3f}-{metric.range_max:.3f}]"
+                    if metric.range_min is not None
+                    else ""
+                )
+                console.print(f"  {name}: {metric.value} (n={metric.sample_count}){spread}")
+            console.print("  operational:")
+            for name, metric in operational.items():
+                console.print(f"    {name}: {metric.value} (n={metric.sample_count})")
+            console.print(
+                "  novel_findings (never affects the score above): "
+                f"plausible={novel_counts.get('plausible_novel_defect', 0)} "
+                f"not_defect={novel_counts.get('not_defect', 0)} "
+                f"inconclusive={novel_counts.get('inconclusive', 0)}"
+            )
+    finally:
+        conn.close()
+
+
+@runengine_app.command("gold-candidates-export")
+def runengine_gold_candidates_export(
+    plan_id: Annotated[str, typer.Option(help="Plan-ID.")],
+) -> None:
+    """Gibt alle `proposed` Gold-Label-Kandidaten eines Plans aus (FR-009b)."""
+    from uuid import UUID
+
+    from benchmark.runengine.db import connect
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT gc.id, gc.item_id, gc.location_file, gc.location_line_start,
+                       gc.location_line_end, gc.finding_summary, gc.judge_reasoning, gc.created_at
+                FROM gold_label_candidate gc
+                JOIN novel_finding_review nfr ON nfr.id = gc.novel_finding_review_id
+                JOIN evaluation e ON e.id = nfr.evaluation_id
+                JOIN attempt a ON a.id = e.attempt_id
+                WHERE a.plan_id = %s AND gc.status = 'proposed'
+                """,
+                (UUID(plan_id),),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        console.print("[yellow]No proposed Gold-label candidates for this plan.[/yellow]")
+        return
+    for candidate_id, item_id, file, line_start, line_end, summary, reasoning, created_at in rows:
+        console.print(f"[bold]{candidate_id}[/bold] {item_id}:{file}:{line_start}-{line_end}")
+        console.print(f"  summary: {summary}")
+        console.print(f"  judge reasoning: {reasoning}")
+        console.print(f"  proposed_at: {created_at}")
 
 
 def _print_check(label: str, ok: bool, detail: str = "") -> None:

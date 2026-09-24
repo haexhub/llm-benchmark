@@ -16,9 +16,20 @@ import psycopg
 import yaml
 
 from benchmark.corpus import RunnerInput, materialize_review_input
+from benchmark.corpus.oracle import ProtectedDefectLabel, validate_protected_defect_label
 from benchmark.live import SqliteResourceLeaseStore
+from benchmark.matching.judge import NovelFindingVerdict, make_novel_finding_judge
 from benchmark.models import Finding
 from benchmark.runengine.artifacts import ArtifactStore
+from benchmark.runengine.evaluator import (
+    EVALUATOR_VERSION,
+    AttemptEvaluation,
+    evaluate_attempt_findings,
+)
+from benchmark.runengine.novel_finding import (
+    propose_gold_label_candidate,
+    record_novel_finding_review,
+)
 from benchmark.runengine.plan import ExecutionPlan
 from benchmark.runengine.retry import classify_failure, should_retry
 from benchmark.tools.base import RunResult
@@ -34,7 +45,6 @@ LEASE_TTL_SECONDS = 3600
 # never actually committed to git (breaks on any fresh clone/worktree).
 DEFAULT_TIMEOUT_SECONDS = 1800
 
-EVALUATOR_VERSION = "runengine-evaluator-1"
 CAPABILITY_PROFILE_ID = uuid5(NAMESPACE_URL, "runengine-v1-capability-profile")
 
 # attempt-manifest.schema.json requires item_id to be a UUID, but corpus items
@@ -235,6 +245,8 @@ def run_attempt(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     executor: CandidateExecutor = default_candidate_executor,
     lease_store: SqliteResourceLeaseStore | None = None,
+    oracle_root: Path | None = None,
+    novel_finding_judge: NovelFindingJudge | None = None,
 ) -> ToolExecutionOutcome | None:
     """Execute one queued Attempt under the shared exclusive lease.
 
@@ -309,6 +321,11 @@ def run_attempt(
 
         if outcome.ok:
             _persist_success_artifacts(conn, store, attempt_id, outcome)
+            if oracle_root is not None:
+                evaluate_and_persist(
+                    conn, attempt_id=attempt_id, item_id=item_id, oracle_root=oracle_root,
+                    findings=outcome.findings, novel_finding_judge=novel_finding_judge,
+                )
             _mark_terminal(conn, attempt_id, status="succeeded", reason=None)
             return outcome
 
@@ -442,3 +459,77 @@ def _maybe_create_retry(
     conn.commit()
     log.info("retrying attempt %s as %s", failed_attempt_id, new_attempt_id)
     return new_attempt_id
+
+
+class NovelFindingJudge(Protocol):
+    def evaluate_novel_finding(self, finding: Finding, *, item_context: str) -> NovelFindingVerdict: ...
+
+
+def _load_gold_labels(oracle_root: Path, item_id: str) -> list[ProtectedDefectLabel]:
+    """0 or 1 label per item in the current corpus model (an item with no
+    ground-truth.yaml is a clean control)."""
+    label_file = oracle_root / item_id / "ground-truth.yaml"
+    if not label_file.is_file():
+        return []
+    return [validate_protected_defect_label(label_file)]
+
+
+def evaluate_and_persist(
+    conn: psycopg.Connection,
+    *,
+    attempt_id: UUID,
+    item_id: str,
+    oracle_root: Path,
+    findings: tuple[Finding, ...],
+    novel_finding_judge: NovelFindingJudge | None = None,
+) -> AttemptEvaluation:
+    """FR-009/FR-009a/FR-009b: classify findings, persist evaluation rows and
+    attempt-level Oracle counts, and triage unmatched findings for the
+    Gold-label-candidate pipeline. Never called from inside a runner's
+    workspace — only after a successful Attempt, against the protected Oracle.
+    """
+    gold_labels = _load_gold_labels(oracle_root, item_id)
+    evaluation = evaluate_attempt_findings(list(findings), gold_labels)
+    findings_by_id = {finding.id: finding for finding in findings}
+
+    with conn.cursor() as cur:
+        for finding_evaluation in evaluation.finding_evaluations:
+            evaluation_row_id = uuid4()
+            cur.execute(
+                """
+                INSERT INTO evaluation
+                    (id, attempt_id, evaluator_version, finding_id, gold_label_id, outcome)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    evaluation_row_id, attempt_id, EVALUATOR_VERSION,
+                    finding_evaluation.finding_id, finding_evaluation.gold_label_id,
+                    finding_evaluation.outcome,
+                ),
+            )
+            if finding_evaluation.outcome == "unmatched_gold":
+                judge = novel_finding_judge or make_novel_finding_judge()
+                finding = findings_by_id[finding_evaluation.finding_id]
+                verdict = judge.evaluate_novel_finding(finding, item_context=item_id)
+                review_id = record_novel_finding_review(
+                    conn, evaluation_id=evaluation_row_id, verdict=verdict
+                )
+                if verdict.verdict == "plausible_novel_defect":
+                    propose_gold_label_candidate(
+                        conn, novel_finding_review_id=review_id, item_id=item_id,
+                        finding=finding, judge_reasoning=verdict.reasoning,
+                    )
+        cur.execute(
+            """
+            UPDATE attempt
+            SET oracle_label_count = %s, matched_gold_label_count = %s,
+                missed_gold_label_count = %s
+            WHERE id = %s
+            """,
+            (
+                evaluation.oracle_label_count, evaluation.matched_gold_label_count,
+                evaluation.missed_gold_label_count, attempt_id,
+            ),
+        )
+    conn.commit()
+    return evaluation

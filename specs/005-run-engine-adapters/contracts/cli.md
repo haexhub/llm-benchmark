@@ -50,7 +50,7 @@ Zusätzlich per Env (`.env`, wie bestehend via `config.py`):
 
 **Zweck**: Alle `queued` Attempts eines Plans abarbeiten (US1, US2).
 
-**Argumente**: `PLAN_ID` (positional), `--suite-dir PATH` (derselbe lokale Checkout, den `plan-create` schon validiert hat — der Plan speichert nur den content_digest, nicht den lokalen Pfad, daher muss er hier erneut angegeben werden).
+**Argumente**: `PLAN_ID` (positional), `--suite-dir PATH` (derselbe lokale Checkout, den `plan-create` schon validiert hat — der Plan speichert nur den content_digest, nicht den lokalen Pfad, daher muss er hier erneut angegeben werden), `--oracle-dir PATH` (optional; protected Oracle-Verzeichnis — ohne diese Option läuft der Attempt durch, wird aber NICHT evaluiert, d.h. keine `evaluation`-Zeilen, kein Score).
 
 **Aktionen**:
 1. Pro Attempt: `SqliteResourceLeaseStore.acquire("local-94gb-gpu", ...)` (dieselbe Lease-Datei wie `benchmark run` und `benchmark live run`).

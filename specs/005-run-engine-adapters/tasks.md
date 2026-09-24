@@ -132,20 +132,35 @@ matches hand-computed expectations.
 
 ### Tests for User Story 3
 
-- [ ] T029 [P] [US3] Unit test: evaluator classifies `matched`/`duplicate`/`false_positive`/`insufficient_evidence`/`unmatched_gold` against known Oracle labels, in `tests/runengine/test_evaluator.py`
-- [ ] T030 [P] [US3] Unit test: scoring aggregates recall/precision/F1/false-positive-rate/duplicate-rate/completion-rate with sample count and min–max range across repetitions, treating every repetition as an independent sample, in `tests/runengine/test_scoring.py`
-- [ ] T031 [P] [US3] Unit test: `evaluate_novel_finding` presents blindly (no candidate identity in the prompt) and its verdict never changes computed metrics, in `tests/runengine/test_novel_finding.py`
-- [ ] T032 [P] [US3] Contract test: a built score report validates against `contracts/score-report.schema.json`, with `novel_findings` never folded into `metrics`, in `tests/runengine/test_contracts.py`
+- [x] T029 [P] [US3] Unit test: evaluator classifies `matched`/`duplicate`/`false_positive`/`insufficient_evidence`/`unmatched_gold` against known Oracle labels, in `tests/runengine/test_evaluator.py`
+- [x] T030 [P] [US3] Unit test: scoring aggregates recall/precision/F1/false-positive-rate/duplicate-rate/completion-rate with sample count and min–max range across repetitions, treating every repetition as an independent sample, in `tests/runengine/test_score_aggregation.py` (renamed from tasks.md's `test_scoring.py` — collided with the existing `tests/corpus/test_scoring.py` basename; neither test dir has `__init__.py`)
+- [x] T031 [P] [US3] Unit test: `evaluate_novel_finding` presents blindly (no candidate identity in the prompt) and its verdict never changes computed metrics, in `tests/runengine/test_novel_finding.py`
+- [x] T032 [P] [US3] Contract test: a built score report validates against `contracts/score-report.schema.json`, with `novel_findings` never folded into `metrics`, in `tests/runengine/test_contracts.py`
 
 ### Implementation for User Story 3
 
-- [ ] T033 [P] [US3] Adapt `matching/aggregator.py`'s classification logic against the corpus Oracle's `ground-truth.yaml` labels in `src/benchmark/runengine/evaluator.py` (depends on T018)
-- [ ] T034 [P] [US3] Add `evaluate_novel_finding()` to `src/benchmark/matching/judge.py`, reusing `build_blind_prompt`/`_parse_verdict`, with `NOVEL_DEFECT_JUDGE_MODEL` falling back to `JUDGE_LLM_MODEL` (research.md R4)
-- [ ] T035 [US3] Persist `NovelFindingReview` rows and create `GoldLabelCandidate` rows (`status="proposed"` only) for `plausible_novel_defect` verdicts, in `src/benchmark/runengine/novel_finding.py` (depends on T034)
-- [ ] T036 [P] [US3] Compute per-candidate/suite/policy `Score` rows from independent per-attempt samples with min–max spread, in `src/benchmark/runengine/scoring.py` (depends on T033)
-- [ ] T037 [US3] CLI: `runengine score show` in `src/benchmark/cli.py` (depends on T036)
-- [ ] T038 [US3] CLI: `runengine gold-candidates export` in `src/benchmark/cli.py` (depends on T035)
-- [ ] T039 [US3] `db`-marked integration test: end-to-end plan run against a small fixture suite with known Oracle labels; verify the score report matches hand-computed recall/precision/F1, in `tests/integration/test_runengine_scoring.py` (depends on T037, T023)
+- [x] T033 [P] [US3] Adapt `matching/aggregator.py`'s classification logic against the corpus Oracle's `ground-truth.yaml` labels in `src/benchmark/runengine/evaluator.py` (depends on T018)
+- [x] T034 [P] [US3] Add `evaluate_novel_finding()` to `src/benchmark/matching/judge.py`, reusing `build_blind_prompt`/`_parse_verdict`, with `NOVEL_DEFECT_JUDGE_MODEL` falling back to `JUDGE_LLM_MODEL` (research.md R4)
+- [x] T035 [US3] Persist `NovelFindingReview` rows and create `GoldLabelCandidate` rows (`status="proposed"` only) for `plausible_novel_defect` verdicts, in `src/benchmark/runengine/novel_finding.py` (depends on T034)
+- [x] T036 [P] [US3] Compute per-candidate/suite/policy `Score` rows from independent per-attempt samples with min–max spread, in `src/benchmark/runengine/scoring.py` (depends on T033)
+- [x] T037 [US3] CLI: `runengine score show` in `src/benchmark/cli.py` (depends on T036)
+- [x] T038 [US3] CLI: `runengine gold-candidates export` in `src/benchmark/cli.py` (depends on T035)
+- [x] T039 [US3] `db`-marked integration test: end-to-end plan run against a small fixture suite with known Oracle labels; verify the score report matches hand-computed recall/precision/F1, in `tests/integration/test_runengine_scoring.py` (depends on T037, T023)
+
+Implementation notes:
+- T033 actually reuses `corpus/oracle.py`'s `AffectedScope`/`ProtectedDefectLabel`
+  models and a fresh scope-overlap matcher (±3 lines, matching
+  `matching/structural.py`'s existing convention) — not `matching/aggregator.py`,
+  which turned out to serve a different, human-decision-driven workflow (see
+  evaluator.py's module docstring for the full reasoning and the important
+  terminology note: its `unmatched_gold` means the opposite of
+  `corpus.assessment.FindingAssessment`'s same-named outcome).
+- `false_positive` is only ever assigned automatically for a clean-control item
+  (zero Gold labels); `insufficient_evidence` is reserved, never produced by
+  this automatic evaluator.
+- Operational metrics (`queue_wait_seconds`/`execution_seconds`, FR-005/FR-011)
+  were added to `scoring.py` alongside quality metrics — needed for
+  `score-show`/the contract, not called out as its own task.
 
 **Checkpoint**: US1+US2+US3 — the decision-grade comparison is usable end-to-end.
 
