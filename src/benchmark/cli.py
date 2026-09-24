@@ -16,6 +16,7 @@ from rich.console import Console
 from benchmark.config import env, load_env, load_live_repositories, load_repos
 from benchmark.corpus import (
     CorpusValidationError,
+    build_coverage_matrix,
     materialize_review_input,
     record_curator_approval,
     validate_defect_label_scope,
@@ -139,6 +140,42 @@ def approve_label(
         f"[green]{label.id} approved by {curator_id} ({label.approval.state}, "
         f"{determinism.run_count}/{determinism.run_count} deterministic runs).[/green]"
     )
+
+
+@corpus_app.command("coverage")
+def corpus_coverage(
+    corpus_dir: Annotated[Path, typer.Argument(help="Pfad zu einem öffentlichen Corpus-Suite-Verzeichnis.")],
+    oracle_dir: Annotated[Path, typer.Argument(help="Pfad zum protected Oracle-Verzeichnis der Suite.")],
+) -> None:
+    """Zeigt Item-/Label-Verteilung und fehlende Strata für eine Corpus-Suite."""
+    try:
+        matrix = build_coverage_matrix(corpus_dir, oracle_dir)
+    except CorpusValidationError as error:
+        console.print(f"[red]Coverage report failed:[/red] {error}")
+        raise typer.Exit(1) from error
+    console.print(
+        f"Items: {matrix.item_count} (clean: {matrix.clean_count}, "
+        f"seeded: {matrix.seeded_count}, clean ratio: {matrix.clean_ratio:.0%})"
+    )
+    console.print(
+        f"Labels: {matrix.decision_ready_label_count} decision-ready, "
+        f"{matrix.pending_label_count} pending"
+    )
+    for dimension, counts in (
+        ("language", matrix.by_language),
+        ("partition", matrix.by_partition),
+        ("source", matrix.by_source),
+        ("diff_size_bucket", matrix.by_diff_size),
+        ("difficulty", matrix.by_difficulty),
+        ("category", matrix.by_category),
+        ("severity", matrix.by_severity),
+    ):
+        rendered = ", ".join(f"{key}={value}" for key, value in sorted(counts.items()))
+        console.print(f"  {dimension}: {rendered or '(none)'}")
+    if matrix.missing_strata:
+        console.print(f"[yellow]Missing strata: {', '.join(matrix.missing_strata)}[/yellow]")
+    else:
+        console.print("[green]No zero-count strata.[/green]")
 
 
 @live_app.command("ingest")
