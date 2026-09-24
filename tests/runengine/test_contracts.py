@@ -35,6 +35,7 @@ class ExecutionPlanRequestContract(BaseModel):
 
 
 def _as_wire_request(request: PlanRequest) -> dict[str, object]:
+    """Convert a plan request to its wire-format contract payload."""
     return {
         "suite_version_digest": f"sha256:{request.suite_version_digest}",
         "candidate_version_ids": [str(c) for c in request.candidate_version_ids],
@@ -48,6 +49,7 @@ def _as_wire_request(request: PlanRequest) -> dict[str, object]:
 
 
 def test_plan_request_validates_against_the_contract() -> None:
+    """Verify plan request validates against the contract."""
     request = PlanRequest(
         suite_version_digest="a" * 64,
         candidate_version_ids=(uuid4(), uuid4()),
@@ -61,6 +63,7 @@ def test_plan_request_validates_against_the_contract() -> None:
 
 
 def test_idempotency_key_is_a_bare_hex_digest() -> None:
+    """Verify idempotency key is a bare hex digest."""
     request = PlanRequest(
         suite_version_digest="a" * 64,
         candidate_version_ids=(uuid4(),),
@@ -119,6 +122,7 @@ class _ScoreReportContract(BaseModel):
 
 
 def _as_metric_dict(metric: MetricValue) -> dict[str, object]:
+    """Convert a metric value to its wire-format contract payload."""
     return {
         "value": metric.value, "sample_count": metric.sample_count,
         "range_min": metric.range_min, "range_max": metric.range_max,
@@ -126,6 +130,7 @@ def _as_metric_dict(metric: MetricValue) -> dict[str, object]:
 
 
 def test_score_report_with_zero_successful_attempts_still_validates() -> None:
+    """Verify score report with zero successful attempts still validates."""
     zero = MetricValue(value=None, sample_count=0)
     completion = MetricValue(value=0.0, sample_count=1)
 

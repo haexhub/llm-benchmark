@@ -24,6 +24,7 @@ from benchmark.tools.base import RunResult
 
 
 def _run_git(*args: str, cwd: Path) -> str:
+    """Run a Git command in the temporary fixture repository."""
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
     return result.stdout.strip()
 
@@ -87,6 +88,7 @@ def create_valid_corpus(tmp_path: Path) -> Path:
 
 
 def test_manifest_has_fixed_axis_and_no_warmup() -> None:
+    """Verify manifest has fixed axis and no warmup."""
     manifest = _build_manifest(
         attempt_id=uuid4(), suite_version_digest="d" * 64, item_id="demo-item",
         candidate_version_id=uuid4(), model="qwen-3-30b", config_hash="c" * 64,
@@ -102,11 +104,13 @@ def test_manifest_has_fixed_axis_and_no_warmup() -> None:
 
 
 def test_manifest_item_id_is_stable_for_the_same_slug() -> None:
+    """Verify manifest item id is stable for the same slug."""
     assert item_uuid("demo-item") == item_uuid("demo-item")
     assert item_uuid("demo-item") != item_uuid("other-item")
 
 
 def test_materialized_workspace_has_no_oracle_material(tmp_path: Path) -> None:
+    """Verify materialized workspace has no oracle material."""
     corpus_root = create_valid_corpus(tmp_path)
     workspace = tmp_path / "workspace"
 
@@ -122,11 +126,13 @@ def test_materialized_workspace_has_no_oracle_material(tmp_path: Path) -> None:
 
 
 def test_schema_drift_is_detected_and_never_treated_as_zero_findings(tmp_path: Path) -> None:
+    """Verify schema drift is detected and never treated as zero findings."""
     bad_output = tmp_path / "pr-agent.json"
     bad_output.write_text("not json at all")
     result = RunResult(returncode=0, stdout="", stderr="", timed_out=False)
 
     def _loader(path: Path) -> list:
+        """Parse tool output so malformed JSON raises an error."""
         return json.loads(path.read_text())  # raises ValueError on bad JSON
 
     outcome = _finish_execution(result, bad_output, _loader)
@@ -137,6 +143,7 @@ def test_schema_drift_is_detected_and_never_treated_as_zero_findings(tmp_path: P
 
 
 def test_successful_output_is_not_flagged_as_drift(tmp_path: Path) -> None:
+    """Verify successful output is not flagged as drift."""
     good_output = tmp_path / "pr-agent.json"
     good_output.write_text("[]")
     result = RunResult(returncode=0, stdout="", stderr="", timed_out=False)
@@ -150,44 +157,54 @@ def test_successful_output_is_not_flagged_as_drift(tmp_path: Path) -> None:
 
 class _AttemptInsertCountingCursor:
     def __init__(self, conn: _AttemptInsertCountingConnection) -> None:
+        """Initialize this test double with its simulated state."""
         self._conn = conn
 
     def __enter__(self) -> _AttemptInsertCountingCursor:
+        """Enter the fake database context and return its cursor."""
         return self
 
     def __exit__(self, *exc: object) -> None:
+        """Leave the fake database context without suppressing exceptions."""
         return None
 
     def execute(self, sql: str, params: tuple | None = None) -> None:
+        """Emulate the SQL operation needed by this test."""
         if sql.strip().startswith("INSERT INTO attempt"):
             self._conn.attempt_inserts += 1
         if sql.strip().startswith("UPDATE attempt SET status = %s, terminal_reason"):
             self._conn.final_status = params[0]
 
     def fetchone(self) -> None:
+        """Return the simulated single-row query result."""
         return None
 
 
 class _AttemptInsertCountingConnection:
     def __init__(self) -> None:
+        """Initialize this test double with its simulated state."""
         self.attempt_inserts = 0
         self.final_status: str | None = None
 
     def cursor(self) -> _AttemptInsertCountingCursor:
+        """Return a fake cursor bound to this connection."""
         return _AttemptInsertCountingCursor(self)
 
     def commit(self) -> None:
+        """Accept a commit without writing to a database."""
         pass
 
 
 def test_schema_drift_end_to_end_marks_invalid_without_creating_a_retry_attempt(
     tmp_path: Path,
 ) -> None:
+    """Verify schema drift end to end marks invalid without creating a retry attempt."""
     corpus_root = create_valid_corpus(tmp_path)
     conn = _AttemptInsertCountingConnection()
     lease_store = SqliteResourceLeaseStore(tmp_path / "run-engine.sqlite3")
 
     def _drifting_executor(**kwargs) -> ToolExecutionOutcome:
+        """Return a candidate outcome with schema drift."""
         return ToolExecutionOutcome(
             ok=False, timed_out=False, returncode=0, stdout="", stderr="",
             schema_drift=True, schema_drift_detail="not json",

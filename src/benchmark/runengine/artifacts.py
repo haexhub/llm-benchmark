@@ -21,6 +21,7 @@ class ArtifactStore:
     """Puts/gets content-addressed blobs in one S3-compatible bucket."""
 
     def __init__(self) -> None:
+        """Configure the S3 client and bucket for content-addressed artifacts."""
         self._bucket = require_env("RUNENGINE_S3_BUCKET")
         self._client = boto3.client(
             "s3",

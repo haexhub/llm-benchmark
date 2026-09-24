@@ -10,16 +10,20 @@ from benchmark.runengine.plan import PlanRequest, create_plan
 
 class _FakeCursor:
     def __init__(self, conn: _FakeConnection) -> None:
+        """Initialize this test double with its simulated state."""
         self._conn = conn
         self._result: tuple | None = None
 
     def __enter__(self) -> _FakeCursor:
+        """Enter the fake database context and return its cursor."""
         return self
 
     def __exit__(self, *exc: object) -> None:
+        """Leave the fake database context without suppressing exceptions."""
         return None
 
     def execute(self, sql: str, params: tuple | None = None) -> None:
+        """Emulate the SQL operation needed by this test."""
         sql = sql.strip()
         if sql.startswith("SELECT id, slug, tool_version"):
             # create_plan's FR-012 gate: every candidate_version_id used in
@@ -41,23 +45,28 @@ class _FakeCursor:
             self._conn.inserted_plans.append(params)
 
     def fetchone(self) -> tuple | None:
+        """Return the simulated single-row query result."""
         return self._result
 
 
 class _FakeConnection:
     def __init__(self) -> None:
+        """Initialize this test double with its simulated state."""
         self.plans_by_key: dict[tuple[str, str], tuple] = {}
         self.inserted_plans: list[tuple] = []
         self.committed = False
 
     def cursor(self) -> _FakeCursor:
+        """Return a fake cursor bound to this connection."""
         return _FakeCursor(self)
 
     def commit(self) -> None:
+        """Accept a commit without writing to a database."""
         self.committed = True
 
 
 def _request(**overrides) -> PlanRequest:
+    """Build a plan request with standard test defaults."""
     defaults = dict(
         suite_version_digest="d" * 64,
         candidate_version_ids=(uuid4(), uuid4()),
@@ -71,6 +80,7 @@ def _request(**overrides) -> PlanRequest:
 
 
 def test_identical_request_returns_the_existing_plan() -> None:
+    """Verify identical request returns the existing plan."""
     conn = _FakeConnection()
     request = _request()
 
@@ -82,6 +92,7 @@ def test_identical_request_returns_the_existing_plan() -> None:
 
 
 def test_different_actor_gets_its_own_plan() -> None:
+    """Verify different actor gets its own plan."""
     conn = _FakeConnection()
     candidates = (uuid4(), uuid4())
 
@@ -92,6 +103,7 @@ def test_different_actor_gets_its_own_plan() -> None:
 
 
 def test_different_repetitions_is_a_different_plan() -> None:
+    """Verify different repetitions is a different plan."""
     conn = _FakeConnection()
 
     plan_a = create_plan(conn, _request(repetitions=3))
@@ -101,5 +113,6 @@ def test_different_repetitions_is_a_different_plan() -> None:
 
 
 def test_repetitions_must_be_positive() -> None:
+    """Verify repetitions must be positive."""
     with pytest.raises(ValueError):
         _request(repetitions=0)

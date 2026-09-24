@@ -19,11 +19,13 @@ from benchmark.runengine.plan import PlanRequest, create_plan
 
 
 def _run_git(*args: str, cwd: Path) -> str:
+    """Run a Git command in the temporary fixture repository."""
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
     return result.stdout.strip()
 
 
 def _create_single_item_corpus(tmp_path: Path) -> Path:
+    """Build a one-item corpus for the integration scenario."""
     source_repo = tmp_path / "source"
     source_repo.mkdir()
     _run_git("init", "--quiet", "--initial-branch=main", cwd=source_repo)
@@ -74,6 +76,7 @@ def _create_single_item_corpus(tmp_path: Path) -> Path:
 
 
 def _stub_executor(**kwargs) -> ToolExecutionOutcome:
+    """Return controlled candidate output for the integration scenario."""
     return ToolExecutionOutcome(
         ok=True, timed_out=False, returncode=0, stdout="", stderr="",
         raw_output=b'{"findings": []}', findings=(),
@@ -84,6 +87,7 @@ def _stub_executor(**kwargs) -> ToolExecutionOutcome:
 def test_plan_create_then_run_produces_distinct_manifests_with_no_oracle_leakage(
     tmp_path: Path,
 ) -> None:
+    """Verify plan create then run produces distinct manifests with no oracle leakage."""
     corpus_root = _create_single_item_corpus(tmp_path)
     conn = connect()
     run_migrations(conn)

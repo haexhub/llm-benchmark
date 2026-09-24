@@ -9,6 +9,7 @@ from benchmark.runengine.db import connect, run_migrations
 
 @pytest.mark.db
 def test_migrations_apply_against_real_postgres() -> None:
+    """Verify migrations apply against real postgres."""
     conn = connect()
     try:
         # Idempotent regardless of whether another test/run already applied it.
@@ -24,6 +25,7 @@ def test_migrations_apply_against_real_postgres() -> None:
 
 @pytest.mark.db
 def test_artifact_store_round_trips_a_blob() -> None:
+    """Verify artifact store round trips a blob."""
     store = ArtifactStore()
     store.ensure_bucket()
     stored = store.put(b"hello run engine", content_type="text/plain")

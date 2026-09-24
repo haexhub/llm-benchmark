@@ -22,6 +22,7 @@ from benchmark.runengine.scoring import compute_scores
 
 
 def _run_git(*args: str, cwd: Path) -> str:
+    """Run a Git command in the temporary fixture repository."""
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
     return result.stdout.strip()
 
@@ -98,7 +99,9 @@ def _create_seeded_corpus(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _make_executor(findings: tuple[Finding, ...]):
+    """Build an executor that returns controlled candidate findings."""
     def _executor(**kwargs) -> ToolExecutionOutcome:
+        """Return deterministic candidate output for this test."""
         return ToolExecutionOutcome(
             ok=True, timed_out=False, returncode=0, stdout="", stderr="",
             raw_output=b"{}", findings=findings,
@@ -109,6 +112,7 @@ def _make_executor(findings: tuple[Finding, ...]):
 
 class _AlwaysNotDefectJudge:
     def evaluate_novel_finding(self, finding: Finding, *, item_context: str) -> NovelFindingVerdict:
+        """Return a controlled novel-finding verdict for the test."""
         return NovelFindingVerdict(
             verdict="not_defect", reasoning="test stub", judge_model="test",
             prompt_hash="b" * 64,
@@ -117,6 +121,7 @@ class _AlwaysNotDefectJudge:
 
 @pytest.mark.db
 def test_score_matches_hand_computed_recall_precision_f1(tmp_path: Path) -> None:
+    """Verify score matches hand computed recall precision f1."""
     corpus_root, oracle_root = _create_seeded_corpus(tmp_path)
     conn = connect()
     run_migrations(conn)
@@ -180,6 +185,7 @@ def test_score_matches_hand_computed_recall_precision_f1(tmp_path: Path) -> None
 
 @pytest.mark.db
 def test_novel_finding_judge_verdict_never_changes_the_score(tmp_path: Path) -> None:
+    """Verify novel finding judge verdict never changes the score."""
     corpus_root, oracle_root = _create_seeded_corpus(tmp_path)
     conn = connect()
     run_migrations(conn)

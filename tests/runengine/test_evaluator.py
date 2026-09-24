@@ -9,6 +9,7 @@ from benchmark.runengine.evaluator import evaluate_attempt_findings
 
 
 def _label(label_id: str, file: str, line_start: int, line_end: int) -> ProtectedDefectLabel:
+    """Build a protected defect label for the evaluation fixture."""
     return ProtectedDefectLabel(
         id=label_id,
         category="correctness",
@@ -21,6 +22,7 @@ def _label(label_id: str, file: str, line_start: int, line_end: int) -> Protecte
 
 
 def _finding(file: str, line_start: int, line_end: int, title: str = "issue") -> Finding:
+    """Build a finding for the evaluation fixture."""
     return Finding(
         id=uuid4(), tool="gito", file=file, line_start=line_start, line_end=line_end,
         severity="major", category="bug", title=title, body="body",
@@ -28,6 +30,7 @@ def _finding(file: str, line_start: int, line_end: int, title: str = "issue") ->
 
 
 def test_finding_overlapping_the_label_is_matched() -> None:
+    """Verify finding overlapping the label is matched."""
     label = _label("def-aaa", "service.py", 10, 12)
     finding = _finding("service.py", 10, 12)
 
@@ -40,6 +43,7 @@ def test_finding_overlapping_the_label_is_matched() -> None:
 
 
 def test_second_finding_on_the_same_label_is_a_duplicate() -> None:
+    """Verify second finding on the same label is a duplicate."""
     label = _label("def-aaa", "service.py", 10, 12)
     first = _finding("service.py", 10, 12, title="first")
     second = _finding("service.py", 11, 11, title="second")
@@ -52,6 +56,7 @@ def test_second_finding_on_the_same_label_is_a_duplicate() -> None:
 
 
 def test_finding_outside_tolerance_on_a_seeded_item_is_unmatched_gold() -> None:
+    """Verify finding outside tolerance on a seeded item is unmatched gold."""
     label = _label("def-aaa", "service.py", 10, 12)
     finding = _finding("service.py", 100, 101)
 
@@ -63,6 +68,7 @@ def test_finding_outside_tolerance_on_a_seeded_item_is_unmatched_gold() -> None:
 
 
 def test_any_finding_on_a_clean_control_is_false_positive() -> None:
+    """Verify any finding on a clean control is false positive."""
     finding = _finding("service.py", 1, 2)
 
     result = evaluate_attempt_findings([finding], [])
@@ -72,6 +78,7 @@ def test_any_finding_on_a_clean_control_is_false_positive() -> None:
 
 
 def test_no_findings_on_a_seeded_item_misses_the_label() -> None:
+    """Verify no findings on a seeded item misses the label."""
     label = _label("def-aaa", "service.py", 10, 12)
 
     result = evaluate_attempt_findings([], [label])
@@ -83,6 +90,7 @@ def test_no_findings_on_a_seeded_item_misses_the_label() -> None:
 
 
 def test_line_tolerance_matches_a_few_lines_outside_the_label() -> None:
+    """Verify line tolerance matches a few lines outside the label."""
     label = _label("def-aaa", "service.py", 10, 10)
     finding = _finding("service.py", 12, 13)  # 2 lines past line_end, within tolerance=3
 
@@ -92,6 +100,7 @@ def test_line_tolerance_matches_a_few_lines_outside_the_label() -> None:
 
 
 def test_different_file_never_matches() -> None:
+    """Verify different file never matches."""
     label = _label("def-aaa", "service.py", 10, 12)
     finding = _finding("other.py", 10, 12)
 

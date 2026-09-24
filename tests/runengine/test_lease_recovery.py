@@ -18,11 +18,13 @@ from benchmark.runengine.attempts import run_attempt
 
 
 def _run_git(*args: str, cwd: Path) -> str:
+    """Run a Git command in the temporary fixture repository."""
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
     return result.stdout.strip()
 
 
 def _create_valid_corpus(tmp_path: Path) -> Path:
+    """Build a valid public corpus for the lease recovery test."""
     source_repo = tmp_path / "source"
     source_repo.mkdir()
     _run_git("init", "--quiet", "--initial-branch=main", cwd=source_repo)
@@ -74,15 +76,19 @@ def _create_valid_corpus(tmp_path: Path) -> Path:
 
 class _FakeCursor:
     def __init__(self, conn: _FakeConnection) -> None:
+        """Initialize this test double with its simulated state."""
         self._conn = conn
 
     def __enter__(self) -> _FakeCursor:
+        """Enter the fake database context and return its cursor."""
         return self
 
     def __exit__(self, *exc: object) -> None:
+        """Leave the fake database context without suppressing exceptions."""
         return None
 
     def execute(self, sql: str, params: tuple | None = None) -> None:
+        """Emulate the SQL operation needed by this test."""
         self._conn.status_history.append(params)
         if "status = 'running'" in sql:
             # Simulate enough wall-clock time passing during execution that
@@ -90,28 +96,34 @@ class _FakeCursor:
             self._conn.clock[0] += 999999
 
     def fetchone(self) -> None:
+        """Return the simulated single-row query result."""
         return None
 
 
 class _FakeConnection:
     def __init__(self, clock: list[float]) -> None:
+        """Initialize this test double with its simulated state."""
         self.clock = clock
         self.status_history: list[tuple] = []
 
     def cursor(self) -> _FakeCursor:
+        """Return a fake cursor bound to this connection."""
         return _FakeCursor(self)
 
     def commit(self) -> None:
+        """Accept a commit without writing to a database."""
         pass
 
 
 def _never_called(**kwargs):
+    """Fail if candidate execution occurs while the lease is unavailable."""
     raise AssertionError("must not execute the candidate once the lease is confirmed lost")
 
 
 def test_losing_the_lease_mid_attempt_marks_it_failed_without_running_the_candidate(
     tmp_path: Path,
 ) -> None:
+    """Verify losing the lease mid attempt marks it failed without running the candidate."""
     corpus_root = _create_valid_corpus(tmp_path)
     clock = [1000.0]
     lease_store = SqliteResourceLeaseStore(tmp_path / "run-engine.sqlite3", now=lambda: clock[0])

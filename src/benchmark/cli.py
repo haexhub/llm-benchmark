@@ -47,6 +47,7 @@ def main(
     reports_dir: Annotated[Path, typer.Option(help="Pfad zum reports/-Verzeichnis.")] = Path("reports"),
     log_level: Annotated[str | None, typer.Option(help="DEBUG|INFO|WARNING|ERROR")] = None,
 ) -> None:
+    """Load configuration and initialize logging for the CLI."""
     load_env()
     setup_logging(log_level)
     _ctx.update(config=config, runs_dir=runs_dir, reports_dir=reports_dir)
@@ -208,6 +209,7 @@ def ingest_live_pr(
 
 
 def _run_live_gito(snapshot: LivePRSnapshot, work_dir: Path, timeout: int) -> list[Finding]:
+    """Run gito against a live pull request snapshot and collect its findings."""
     from benchmark.tools.gito import GITO_REPORT_FILENAME, load_gito_findings, run_gito_on_pr
 
     owner, name = snapshot.repository.split("/", 1)
@@ -229,6 +231,7 @@ def _run_live_gito(snapshot: LivePRSnapshot, work_dir: Path, timeout: int) -> li
 
 
 def _run_live_pragent(diff_file: Path, work_dir: Path, timeout: int) -> list[Finding]:
+    """Run pr-agent against a live pull request snapshot and collect its findings."""
     import json
 
     from benchmark.tools.pr_agent import parse_pragent_json, run_pragent_on_diff
@@ -285,6 +288,7 @@ def run_live_pr(
     ingestor = LivePRIngestor(store, fetch_refs=fetch_pr_refs, fetch_diff=fetch_diff_for_refs)
 
     def _fetch_cr_comments_for_slug(repository: str, pr_number: int):
+        """Fetch CodeRabbit comments for the specified repository and pull request."""
         owner, name = repository.split("/", 1)
         return fetch_cr_comments(owner, name, pr_number)
 
@@ -298,10 +302,12 @@ def run_live_pr(
     work_dir.mkdir(parents=True, exist_ok=True)
 
     def _gito(snapshot: LivePRSnapshot) -> list[Finding]:
+        """Run gito in a fresh temporary attempt directory."""
         with tempfile.TemporaryDirectory(dir=work_dir, prefix="gito-") as attempt_dir:
             return _run_live_gito(snapshot, Path(attempt_dir), TOOL_TIMEOUT_SECONDS)
 
     def _pragent(snapshot: LivePRSnapshot) -> list[Finding]:
+        """Run pr-agent in a fresh temporary attempt directory."""
         with tempfile.TemporaryDirectory(dir=work_dir, prefix="pr-agent-") as attempt_dir:
             return _run_live_pragent(
                 store.diff_path(snapshot), Path(attempt_dir), TOOL_TIMEOUT_SECONDS
@@ -616,6 +622,7 @@ def runengine_gold_candidates_export(
 
 
 def _print_check(label: str, ok: bool, detail: str = "") -> None:
+    """Render a labeled pass or fail result with optional detail."""
     icon = "[green]✓[/green]" if ok else "[red]✗[/red]"
     line = f"{icon} {label}"
     if detail:
@@ -765,6 +772,7 @@ def check() -> int:
 
 
 def _resolve_repos():
+    """Resolve repository identifiers for the requested benchmark run."""
     from benchmark import pipeline  # noqa: F401
 
     return load_repos(_ctx.get("config") or Path("config/repos.yaml"))

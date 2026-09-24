@@ -28,6 +28,7 @@ class MetricValue:
 def compute_scores(
     conn: psycopg.Connection, *, plan_id: UUID, candidate_version_id: UUID
 ) -> dict[str, MetricValue]:
+    """Aggregate quality and completion metrics from successful attempts."""
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id, oracle_label_count, matched_gold_label_count FROM attempt "
@@ -91,6 +92,7 @@ def compute_scores(
     ]
 
     def _aggregate(values: list[float]) -> MetricValue:
+        """Summarize nonempty per-attempt values with their mean and range."""
         return MetricValue(
             value=sum(values) / len(values), sample_count=len(values),
             range_min=min(values), range_max=max(values),
@@ -119,6 +121,7 @@ def compute_operational_metrics(
         rows = cur.fetchall()
 
     def _aggregate(values: list[float]) -> MetricValue:
+        """Summarize timing samples or report that none were available."""
         if not values:
             return MetricValue(value=None, sample_count=0)
         return MetricValue(
@@ -151,6 +154,7 @@ def persist_scores(
     score_policy_version: str,
     metrics: dict[str, MetricValue],
 ) -> None:
+    """Upsert computed metrics for a candidate and plan."""
     with conn.cursor() as cur:
         for name, metric in metrics.items():
             cur.execute(

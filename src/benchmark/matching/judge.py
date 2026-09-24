@@ -87,6 +87,7 @@ def build_blind_prompt(a: Finding, b: Finding, pr_context: str) -> _BlindPresent
     first, second = (a, b) if a_is_first else (b, a)
 
     def _describe(f: Finding, label: str) -> str:
+        """Render one anonymized finding under its assigned label."""
         return (
             f"[{label}]\n"
             f"  file:   {f.file}\n"
@@ -129,6 +130,7 @@ def build_blind_novel_finding_prompt(finding: Finding, item_context: str) -> _Bl
 
 
 def _parse_novel_finding_verdict(raw: str, model: str, prompt_hash: str) -> NovelFindingVerdict:
+    """Parse and validate the judge response for a novel finding."""
     text = raw.strip()
     if text.startswith("```"):
         text = text.strip("`")
@@ -156,6 +158,7 @@ def _parse_novel_finding_verdict(raw: str, model: str, prompt_hash: str) -> Nove
 
 
 def _parse_verdict(raw: str, model: str, prompt_hash: str) -> JudgeVerdict:
+    """Parse the judge response for a pair of findings."""
     text = raw.strip()
     # Strip common LLM fluff (fenced blocks)
     if text.startswith("```"):
@@ -189,6 +192,7 @@ class AnthropicJudge:
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> None:
+        """Configure the Anthropic client and judge model from arguments or the environment."""
         from anthropic import Anthropic
 
         self.model = model or require_env("JUDGE_LLM_MODEL")
@@ -199,6 +203,7 @@ class AnthropicJudge:
         self._client = Anthropic(**client_kwargs)
 
     def evaluate_pair(self, a: Finding, b: Finding, *, pr_context: str) -> JudgeVerdict:
+        """Ask Anthropic whether two blinded findings describe one defect."""
         prep = build_blind_prompt(a, b, pr_context)
         # No `temperature` param: verified live against anthropic==1.5.0, whose
         # Messages.create() signature no longer accepts it at all (TypeError,
@@ -217,6 +222,7 @@ class AnthropicJudge:
         return _parse_verdict(text, self.model, prep.prompt_hash)
 
     def evaluate_novel_finding(self, finding: Finding, *, item_context: str) -> NovelFindingVerdict:
+        """Ask Anthropic to assess a blinded potential novel defect."""
         prep = build_blind_novel_finding_prompt(finding, item_context)
         resp = self._client.messages.create(
             model=self.model,
@@ -235,6 +241,7 @@ class OpenAICompatJudge:
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> None:
+        """Configure an OpenAI-compatible client and judge model."""
         from openai import OpenAI
 
         self.model = model or require_env("JUDGE_LLM_MODEL")
@@ -244,6 +251,7 @@ class OpenAICompatJudge:
         )
 
     def evaluate_pair(self, a: Finding, b: Finding, *, pr_context: str) -> JudgeVerdict:
+        """Ask the OpenAI-compatible judge to compare two blinded findings."""
         prep = build_blind_prompt(a, b, pr_context)
         resp = self._client.chat.completions.create(
             model=self.model,
@@ -256,6 +264,7 @@ class OpenAICompatJudge:
         return _parse_verdict(text, self.model, prep.prompt_hash)
 
     def evaluate_novel_finding(self, finding: Finding, *, item_context: str) -> NovelFindingVerdict:
+        """Ask the OpenAI-compatible judge to assess a blinded novel finding."""
         prep = build_blind_novel_finding_prompt(finding, item_context)
         resp = self._client.chat.completions.create(
             model=self.model,
@@ -269,6 +278,7 @@ class OpenAICompatJudge:
 
 
 def make_judge() -> JudgeClient:
+    """Create the configured provider for pairwise finding judgments."""
     provider = (env("JUDGE_LLM_PROVIDER", "anthropic") or "anthropic").lower()
     if provider == "anthropic":
         return AnthropicJudge()

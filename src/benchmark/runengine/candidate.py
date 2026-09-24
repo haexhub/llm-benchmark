@@ -85,6 +85,7 @@ def register_candidate(
 
 
 def get_candidate(conn: psycopg.Connection, candidate_version_id: UUID) -> CandidateVersion | None:
+    """Load a candidate version and its capability-probe status from the database."""
     with conn.cursor() as cur:
         cur.execute(
             """

@@ -23,6 +23,7 @@ class PlanRequest:
     created_by: str
 
     def __post_init__(self) -> None:
+        """Reject requests with invalid repetition or retry limits."""
         if self.repetitions < 1:
             raise ValueError("repetitions must be >= 1")
         if self.retry_cap < 0:
@@ -46,6 +47,7 @@ class ExecutionPlan:
 
 
 def idempotency_key(request: PlanRequest) -> str:
+    """Hash the actor and normalized plan axes into a stable request key."""
     normalized = "|".join(
         [
             request.suite_version_digest,

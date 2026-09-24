@@ -13,6 +13,7 @@ from benchmark.runengine.attempts import RESOURCE_NAME
 
 
 def test_runengine_and_live_challenger_share_one_lease(tmp_path: Path) -> None:
+    """Verify runengine and live challenger share one lease."""
     runs_dir = tmp_path / "runs"
     lease_file = runs_dir / "run-engine.sqlite3"
 

@@ -51,6 +51,7 @@ CAPABILITY_PROFILE_ID = uuid5(NAMESPACE_URL, "runengine-v1-capability-profile")
 # use human-readable slugs (e.g. "python-cache-miss"). Derive a stable UUID
 # from the slug for the manifest only; the `attempt` table keeps the real slug.
 def item_uuid(item_id: str) -> UUID:
+    """Derive a stable manifest UUID from a human-readable corpus item ID."""
     return uuid5(NAMESPACE_URL, f"review-corpus-item:{item_id}")
 
 
@@ -140,6 +141,7 @@ def _build_manifest(
     resource_profile: str,
     created_at: datetime,
 ) -> dict[str, object]:
+    """Build the immutable attempt manifest required by the benchmark contract."""
     return {
         "attempt_id": str(attempt_id),
         "suite_version_digest": f"sha256:{suite_version_digest}",
@@ -209,6 +211,7 @@ def default_candidate_executor(
 def _finish_execution(
     result: RunResult, output_path: Path, loader: Callable[[Path], list[Finding]]
 ) -> ToolExecutionOutcome:
+    """Convert tool output into findings or a schema-drift failure."""
     if not result.ok:
         return ToolExecutionOutcome(
             ok=False, timed_out=result.timed_out, returncode=result.returncode,
@@ -350,6 +353,7 @@ def run_attempt(
 
 
 def _mark_terminal(conn: psycopg.Connection, attempt_id: UUID, *, status: str, reason: str | None) -> None:
+    """Record the terminal status and finish time for an attempt."""
     finished_at = datetime.now(UTC)
     with conn.cursor() as cur:
         cur.execute(
@@ -362,6 +366,7 @@ def _mark_terminal(conn: psycopg.Connection, attempt_id: UUID, *, status: str, r
 def _persist_success_artifacts(
     conn: psycopg.Connection, store: ArtifactStore, attempt_id: UUID, outcome: ToolExecutionOutcome
 ) -> None:
+    """Store successful raw output and normalized findings as artifacts."""
     raw_stored = store.put(outcome.raw_output, content_type="application/json")
     findings_bytes = json.dumps(
         [f.model_dump(mode="json") for f in outcome.findings], sort_keys=True
@@ -391,6 +396,7 @@ def _persist_success_artifacts(
 def _maybe_create_retry(
     conn: psycopg.Connection, store: ArtifactStore, failed_attempt_id: UUID, *, model: str, config_hash: str
 ) -> UUID | None:
+    """Create a fresh attempt when the failure is retryable within the cap."""
     with conn.cursor() as cur:
         cur.execute(
             """

@@ -136,6 +136,7 @@ def run_gito_on_bundle(
 
 
 def parse_gito_json(payload: dict[str, Any]) -> list[Finding]:
+    """Convert gito issue payloads into normalized benchmark findings."""
     findings: list[Finding] = []
     issues_by_file = payload.get("issues") or {}
     for file_path, issue_list in issues_by_file.items():
@@ -165,12 +166,14 @@ def parse_gito_json(payload: dict[str, Any]) -> list[Finding]:
 
 
 def load_gito_findings(path: Path) -> list[Finding]:
+    """Read a gito report and parse its normalized findings."""
     with path.open() as fh:
         payload = json.load(fh)
     return parse_gito_json(payload)
 
 
 def _iter_affected_lines(issue: dict[str, Any]):
+    """Yield the line locations attached to a gito issue."""
     affected = issue.get("affected_lines") or []
     if not affected:
         yield (0, 0, None)
@@ -206,6 +209,7 @@ def _map_severity(raw: Any) -> Severity:
 
 
 def _map_category(tags: list[str]) -> Category:
+    """Map gito issue tags to a benchmark finding category."""
     tags_lc = {t.lower() for t in tags if isinstance(t, str)}
     if tags_lc & {"bug", "correctness", "error-handling"}:
         return "bug"

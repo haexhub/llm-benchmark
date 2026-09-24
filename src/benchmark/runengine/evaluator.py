@@ -48,6 +48,7 @@ class AttemptEvaluation:
 
 
 def _scope_matches(finding: Finding, scope: AffectedScope) -> bool:
+    """Check whether a finding falls within a protected label scope."""
     if finding.file != scope.file:
         return False
     if scope.line_start is None or scope.line_end is None:
