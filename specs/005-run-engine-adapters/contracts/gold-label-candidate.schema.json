@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GoldLabelCandidate",
+  "description": "FR-009b export format consumed by feature 003's curator-approval pipeline. This engine only ever writes status='proposed'; promotion to 'promoted'/'rejected' happens exclusively in that external pipeline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "item_id", "location", "finding_summary", "judge_reasoning", "status", "created_at"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "item_id": {"type": "string", "format": "uuid"},
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line_start", "line_end"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "line_start": {"type": "integer", "minimum": 1},
+        "line_end": {"type": "integer", "minimum": 1}
+      }
+    },
+    "finding_summary": {"type": "string", "minLength": 1},
+    "judge_reasoning": {"type": "string", "minLength": 1},
+    "judge_model": {"type": "string", "minLength": 1},
+    "status": {"enum": ["proposed", "promoted", "rejected"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "curator_reviewed_at": {"type": ["string", "null"], "format": "date-time"}
+  }
+}

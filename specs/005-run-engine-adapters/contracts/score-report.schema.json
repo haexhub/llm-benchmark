@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScoreReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_id", "candidate_version_id", "suite_version_digest", "score_policy_version", "metrics", "operational", "novel_findings"],
+  "properties": {
+    "plan_id": {"type": "string", "format": "uuid"},
+    "candidate_version_id": {"type": "string", "format": "uuid"},
+    "suite_version_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "score_policy_version": {"type": "string", "minLength": 1},
+    "metrics": {
+      "type": "object",
+      "description": "Decision-grade, Oracle-only metrics (constitution Principle II). Never includes judge-derived data.",
+      "additionalProperties": false,
+      "required": ["recall", "precision", "f1", "false_positive_rate", "duplicate_rate", "completion_rate"],
+      "properties": {
+        "recall": {"$ref": "#/$defs/metricValue"},
+        "precision": {"$ref": "#/$defs/metricValue"},
+        "f1": {"$ref": "#/$defs/metricValue"},
+        "false_positive_rate": {"$ref": "#/$defs/metricValue"},
+        "duplicate_rate": {"$ref": "#/$defs/metricValue"},
+        "completion_rate": {"$ref": "#/$defs/completionMetricValue"}
+      }
+    },
+    "operational": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["queue_wait_seconds", "execution_seconds"],
+      "properties": {
+        "queue_wait_seconds": {"$ref": "#/$defs/metricValue"},
+        "execution_seconds": {"$ref": "#/$defs/metricValue"},
+        "tokens": {"$ref": "#/$defs/metricValue"},
+        "estimated_cost_usd": {"$ref": "#/$defs/metricValue"}
+      }
+    },
+    "novel_findings": {
+      "type": "object",
+      "description": "FR-009a panel. MUST NOT be combined into `metrics` under any score policy.",
+      "additionalProperties": false,
+      "required": ["plausible_novel_defect_count", "not_defect_count", "inconclusive_count"],
+      "properties": {
+        "plausible_novel_defect_count": {"type": "integer", "minimum": 0},
+        "not_defect_count": {"type": "integer", "minimum": 0},
+        "inconclusive_count": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
+  "$defs": {
+    "metricValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "sample_count"],
+      "properties": {
+        "value": {"type": ["number", "null"]},
+        "sample_count": {"type": "integer", "minimum": 0},
+        "range_min": {"type": "number"},
+        "range_max": {"type": "number"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value": {"type": "number"},
+            "sample_count": {"type": "integer", "minimum": 1}
+          }
+        },
+        {
+          "properties": {
+            "value": {"type": "null"},
+            "sample_count": {"const": 0}
+          }
+        }
+      ],
+      "description": "A metric with no successful samples is represented as value=null and sample_count=0. Sampled metrics have a numeric value and sample_count >= 1; completion_rate is always sampled over the plan's expected work cells."
+    },
+    "completionMetricValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "sample_count"],
+      "properties": {
+        "value": {"type": "number"},
+        "sample_count": {"type": "integer", "minimum": 1},
+        "range_min": {"type": "number"},
+        "range_max": {"type": "number"}
+      },
+      "description": "Completion rate is always numeric and sampled over the plan's expected work cells, including failed and unfinished cells."
+    }
+  }
+}

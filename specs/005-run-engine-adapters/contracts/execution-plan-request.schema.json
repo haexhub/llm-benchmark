@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExecutionPlanRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["suite_version_digest", "candidate_version_ids", "repetitions", "resource_profile", "score_policy_version", "comparison_axis"],
+  "properties": {
+    "suite_version_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "candidate_version_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}, "minItems": 1, "uniqueItems": true},
+    "repetitions": {"type": "integer", "minimum": 1, "default": 3},
+    "retry_cap": {"type": "integer", "minimum": 0, "default": 3},
+    "resource_profile": {"type": "string", "const": "local-94gb-gpu"},
+    "score_policy_version": {"type": "string", "minLength": 1},
+    "comparison_axis": {"type": "string", "const": "end_to_end_agent"},
+    "idempotency_key": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "Computed by the server from the authenticated actor identity and the other fields; a client MAY supply it to pre-check, but the server is authoritative and scopes lookup to that actor."}
+  }
+}
