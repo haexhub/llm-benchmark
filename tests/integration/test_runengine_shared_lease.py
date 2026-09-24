@@ -1,7 +1,7 @@
 """US2: a runengine batch Attempt and a feature-004 live-challenger attempt must
 never execute concurrently — both acquire from the same SqliteResourceLeaseStore
 and `local-94gb-gpu` resource key (research.md R3). Hermetic: real SQLite file,
-no Postgres/MinIO needed, so no `-m db` marker despite the "db-marked" wording
+no Postgres/RustFS needed, so no `-m db` marker despite the "db-marked" wording
 in tasks.md's T028 (that wording predates checking what the marker actually gates).
 """
 from __future__ import annotations

@@ -15,23 +15,28 @@ services:
       timeout: 2s
       retries: 15
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  rustfs:
+    image: rustfs/rustfs:latest
     environment:
-      MINIO_ROOT_USER: benchmark
-      MINIO_ROOT_PASSWORD: benchmark123
+      RUSTFS_ACCESS_KEY: benchmark
+      RUSTFS_SECRET_KEY: benchmark123
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: "0.0.0.0:9000"
+      RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
     ports:
       - "127.0.0.1:9010:9000"
       - "127.0.0.1:9011:9001"
     volumes:
-      - minio_data:/data
+      # Existing MinIO objects are not migrated into this RustFS volume;
+      # reset the local stack first when upgrading from the old service.
+      - rustfs_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "--fail", "http://localhost:9000/health/ready"]
       interval: 2s
       timeout: 2s
       retries: 15
 
 volumes:
   postgres_data:
-  minio_data:
+  rustfs_data:

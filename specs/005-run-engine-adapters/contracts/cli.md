@@ -18,7 +18,7 @@ Zusätzlich per Env (`.env`, wie bestehend via `config.py`):
 | Variable | Pflicht | Zweck |
 |---|---|---|
 | `RUNENGINE_DATABASE_URL` | ja | PostgreSQL-DSN für den Katalog |
-| `RUNENGINE_S3_ENDPOINT_URL` / `_BUCKET` / `_ACCESS_KEY` / `_SECRET_KEY` | ja | S3-kompatibler Artifact-Store (lokal: MinIO aus `docker-compose.yml`) |
+| `RUNENGINE_S3_ENDPOINT_URL` / `_BUCKET` / `_ACCESS_KEY` / `_SECRET_KEY` | ja | S3-kompatibler Artifact-Store (lokal: RustFS aus `docker-compose.yml`) |
 | `NOVEL_DEFECT_JUDGE_MODEL` | nein (Fallback `JUDGE_LLM_MODEL`) | Modell für FR-009a (z. B. Claude Opus 5) |
 
 ## Subkommando: `runengine candidate-register`
