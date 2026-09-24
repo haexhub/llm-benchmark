@@ -234,15 +234,26 @@ def run_attempt(
     runs_dir: Path,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     executor: CandidateExecutor = default_candidate_executor,
+    lease_store: SqliteResourceLeaseStore | None = None,
 ) -> ToolExecutionOutcome | None:
     """Execute one queued Attempt under the shared exclusive lease.
 
     Returns None (and leaves the Attempt `queued`) if the lease is held by
     another worker — callers should try again later, matching the existing
     `pipeline.py`/`live/runner.py` convention rather than blocking.
+
+    `lease_store` is injectable (defaults to the real `runs_dir`-backed store)
+    so a test can simulate a lost/expired lease deterministically, without a
+    real sleep — see test_lease_recovery.py.
     """
+    if timeout >= LEASE_TTL_SECONDS:
+        raise ValueError(
+            f"timeout ({timeout}s) must be well below LEASE_TTL_SECONDS ({LEASE_TTL_SECONDS}s) — "
+            "the single pre-execution renew() only holds if no single execution can outlive it"
+        )
     worker_id = f"runengine-{attempt_id}"
-    lease_store = SqliteResourceLeaseStore(runs_dir / "run-engine.sqlite3")
+    if lease_store is None:
+        lease_store = SqliteResourceLeaseStore(runs_dir / "run-engine.sqlite3")
     lease = lease_store.acquire(RESOURCE_NAME, worker_id, ttl_seconds=LEASE_TTL_SECONDS)
     if lease is None:
         return None
@@ -276,6 +287,13 @@ def run_attempt(
             _mark_terminal(conn, attempt_id, status="failed", reason="lost resource lease")
             return None
 
+        # ponytail: this renews once before executing rather than heartbeating
+        # from a background thread during the (synchronous, blocking) tool
+        # call — safe only because LEASE_TTL_SECONDS (3600s) comfortably
+        # exceeds `timeout` (default 1800s), so no single execution can
+        # outlive the lease it already holds. If a future candidate's timeout
+        # could exceed the lease TTL, this needs a real mid-execution
+        # heartbeat (and killing the subprocess group on renewal failure).
         outcome = executor(
             candidate_slug=candidate_slug, corpus_root=corpus_root, item_id=item_id,
             runner_input=runner_input, work_dir=work_dir, timeout=timeout,

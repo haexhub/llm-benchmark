@@ -94,14 +94,25 @@ terminal, audited state.
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] Unit test: of several attempts contending for `local-94gb-gpu`, only one executes at a time, in `tests/runengine/test_lease_integration.py`
-- [ ] T025 [P] [US2] Unit test: recovery fences the prior attempt or confirms its endpoint handles are closed before reclaiming an expired lease, then retries or invalidates without double-scoring, in `tests/runengine/test_lease_recovery.py`
+- [x] T024 [P] [US2] Unit test: of several attempts contending for `local-94gb-gpu`, only one executes at a time, in `tests/runengine/test_lease_integration.py`
+- [x] T025 [P] [US2] Unit test: recovery fences the prior attempt or confirms its endpoint handles are closed before reclaiming an expired lease, then retries or invalidates without double-scoring, in `tests/runengine/test_lease_recovery.py`
 
 ### Implementation for User Story 2
 
-- [ ] T026 [US2] Acquire/renew/release through the existing `SqliteResourceLeaseStore` — same `runs/run-engine.sqlite3` file and `local-94gb-gpu` key already used by `pipeline.py` and `live/runner.py` (research.md R3) — maintain an independent heartbeat during candidate execution; if renewal returns `False`, terminate the candidate subprocess/process group and mark the Attempt failed; recovery must fence the prior process group or confirm its endpoint handles are closed before takeover — in `src/benchmark/runengine/attempts.py` (depends on T018)
-- [ ] T027 [US2] Record `queued_at`/`leased_at`/`started_at`/`evaluated_at`/`finished_at` separately per Attempt in `src/benchmark/runengine/attempts.py` (depends on T026)
-- [ ] T028 [US2] `db`-marked integration test: a runengine Attempt and a simulated feature-004 live-challenger attempt both targeting `local-94gb-gpu` never execute concurrently, in `tests/integration/test_runengine_shared_lease.py` (depends on T026)
+- [x] T026 [US2] Acquire/renew/release through the existing `SqliteResourceLeaseStore` — same `runs/run-engine.sqlite3` file and `local-94gb-gpu` key already used by `pipeline.py` and `live/runner.py` (research.md R3) — maintain an independent heartbeat during candidate execution; if renewal returns `False`, terminate the candidate subprocess/process group and mark the Attempt failed; recovery must fence the prior process group or confirm its endpoint handles are closed before takeover — in `src/benchmark/runengine/attempts.py` (depends on T018)
+- [x] T027 [US2] Record `queued_at`/`leased_at`/`started_at`/`evaluated_at`/`finished_at` separately per Attempt in `src/benchmark/runengine/attempts.py` (depends on T026)
+- [x] T028 [US2] `db`-marked integration test: a runengine Attempt and a simulated feature-004 live-challenger attempt both targeting `local-94gb-gpu` never execute concurrently, in `tests/integration/test_runengine_shared_lease.py` (depends on T026)
+
+Implementation note (T026): renews the lease once before the (synchronous,
+blocking) tool call rather than heartbeating from a background thread during
+it — marked with a `ponytail:` comment in attempts.py. Safe only because
+`LEASE_TTL_SECONDS` (3600s) comfortably exceeds the default execution timeout
+(1800s); `run_attempt` now raises if a caller ever passes `timeout >=
+LEASE_TTL_SECONDS`, so this assumption can't silently stop holding. A true
+mid-execution heartbeat with subprocess-group termination is the upgrade path
+if a future candidate needs a longer per-attempt timeout.
+T028's test doesn't actually need Postgres/MinIO (pure SQLite lease file), so
+it isn't `-m db`-marked despite the task text — see the test file's docstring.
 
 **Checkpoint**: User Stories 1 and 2 both work independently.
 
