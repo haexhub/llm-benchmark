@@ -32,7 +32,8 @@ def compute_scores(
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id, oracle_label_count, matched_gold_label_count FROM attempt "
-            "WHERE plan_id = %s AND candidate_version_id = %s AND status = 'succeeded'",
+            "WHERE plan_id = %s AND candidate_version_id = %s AND status = 'succeeded' "
+            "AND evaluated_at IS NOT NULL",
             (plan_id, candidate_version_id),
         )
         succeeded = cur.fetchall()

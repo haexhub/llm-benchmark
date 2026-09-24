@@ -11,7 +11,9 @@ _TRANSIENT_MARKERS = (
     "connection reset",
     "connection aborted",
     "timed out",
-    "timeout",
+    "timeouterror",
+    "readtimeout",
+    "connecttimeout",
     "temporary failure in name resolution",
     "name or service not known",
 )

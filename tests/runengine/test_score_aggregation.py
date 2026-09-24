@@ -35,6 +35,7 @@ class _FakeCursor:
                 (a.id, a.oracle_label_count, a.matched_gold_label_count)
                 for a in self._conn.attempts
                 if a.candidate_version_id == params[1] and a.status == "succeeded"
+                and getattr(a, "evaluated_at", True) is not None
             ]
         elif "count(*) FROM attempt" in sql and "retry_of_attempt_id IS NULL" in sql:
             self._result = (
@@ -75,6 +76,7 @@ class _FakeAttempt:
         self.oracle_label_count = oracle_count
         self.matched_gold_label_count = matched_count
         self.retry_of_attempt_id = retry_of
+        self.evaluated_at = True
 
 
 class _FakeEvaluation:

@@ -34,7 +34,6 @@ def record_novel_finding_review(
                 verdict.reasoning, verdict.prompt_hash,
             ),
         )
-    conn.commit()
     return review_id
 
 
@@ -61,5 +60,4 @@ def propose_gold_label_candidate(
                 finding.line_start, finding.line_end, finding.title, judge_reasoning,
             ),
         )
-    conn.commit()
     return candidate_id

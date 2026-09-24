@@ -41,8 +41,9 @@ class _FakeCursor:
                 resource_profile, score_policy_version, comparison_axis, key,
                 created_by, created_at,
             ) = params
-            self._conn.plans_by_key[(created_by, key)] = (plan_id, created_at)
-            self._conn.inserted_plans.append(params)
+            if (created_by, key) not in self._conn.plans_by_key:
+                self._conn.plans_by_key[(created_by, key)] = (plan_id, created_at)
+                self._conn.inserted_plans.append(params)
 
     def fetchone(self) -> tuple | None:
         """Return the simulated single-row query result."""
@@ -105,9 +106,10 @@ def test_different_actor_gets_its_own_plan() -> None:
 def test_different_repetitions_is_a_different_plan() -> None:
     """Verify different repetitions is a different plan."""
     conn = _FakeConnection()
+    candidates = (uuid4(), uuid4())
 
-    plan_a = create_plan(conn, _request(repetitions=3))
-    plan_b = create_plan(conn, _request(repetitions=5))
+    plan_a = create_plan(conn, _request(candidate_version_ids=candidates, repetitions=3))
+    plan_b = create_plan(conn, _request(candidate_version_ids=candidates, repetitions=5))
 
     assert plan_a.id != plan_b.id
 

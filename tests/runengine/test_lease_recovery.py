@@ -14,7 +14,7 @@ import yaml
 
 from benchmark.corpus import compute_suite_content_digest
 from benchmark.live import SqliteResourceLeaseStore
-from benchmark.runengine.attempts import run_attempt
+from benchmark.runengine.attempts import ToolExecutionOutcome, run_attempt
 
 
 def _run_git(*args: str, cwd: Path) -> str:
@@ -90,10 +90,6 @@ class _FakeCursor:
     def execute(self, sql: str, params: tuple | None = None) -> None:
         """Emulate the SQL operation needed by this test."""
         self._conn.status_history.append(params)
-        if "status = 'running'" in sql:
-            # Simulate enough wall-clock time passing during execution that
-            # the lease expires before the post-execution renew() check.
-            self._conn.clock[0] += 999999
 
     def fetchone(self) -> None:
         """Return the simulated single-row query result."""
@@ -115,12 +111,7 @@ class _FakeConnection:
         pass
 
 
-def _never_called(**kwargs):
-    """Fail if candidate execution occurs while the lease is unavailable."""
-    raise AssertionError("must not execute the candidate once the lease is confirmed lost")
-
-
-def test_losing_the_lease_mid_attempt_marks_it_failed_without_running_the_candidate(
+def test_losing_the_lease_mid_attempt_marks_it_failed_without_recording_success(
     tmp_path: Path,
 ) -> None:
     """Verify losing the lease mid attempt marks it failed without running the candidate."""
@@ -129,11 +120,17 @@ def test_losing_the_lease_mid_attempt_marks_it_failed_without_running_the_candid
     lease_store = SqliteResourceLeaseStore(tmp_path / "run-engine.sqlite3", now=lambda: clock[0])
     conn = _FakeConnection(clock)
 
+    def executor(**kwargs) -> ToolExecutionOutcome:
+        clock[0] += 999999
+        return ToolExecutionOutcome(
+            ok=True, timed_out=False, returncode=0, stdout="", stderr="", findings=(),
+        )
+
     outcome = run_attempt(
         conn, store=object(), attempt_id=uuid4(), corpus_root=corpus_root, item_id="demo-item",
         candidate_slug="gito", model="m", config_hash="c" * 64,
         workspace_root=tmp_path / "workspaces", runs_dir=tmp_path,
-        executor=_never_called, lease_store=lease_store,
+        executor=executor, lease_store=lease_store,
     )
 
     assert outcome is None

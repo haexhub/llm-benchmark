@@ -88,3 +88,11 @@ def test_no_pending_migrations_applies_nothing(tmp_path: Path) -> None:
     applied = run_migrations(conn, migrations_dir=tmp_path)
 
     assert applied == []
+
+
+def test_migrations_take_a_transaction_scoped_lock() -> None:
+    conn = _FakeConnection(already_applied=set())
+
+    run_migrations(conn, migrations_dir=Path("/does/not/exist"))
+
+    assert any("pg_advisory_xact_lock" in sql for sql in conn.executed_sql)

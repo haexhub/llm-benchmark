@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -75,7 +76,10 @@ def build_pragent_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
     return e
 
 
-def run_pragent_on_diff(diff_file: Path, json_output: Path, timeout: int = 600) -> RunResult:
+def run_pragent_on_diff(
+    diff_file: Path, json_output: Path, timeout: int = 600,
+    cancel_event: threading.Event | None = None, tool_version: str | None = None,
+) -> RunResult:
     """Run pr-agent in plain-diff local mode: no GitHub round-trip, just a local diff file.
 
     This is the only supported mode for us: --json-output is rejected by pr-agent
@@ -83,12 +87,12 @@ def run_pragent_on_diff(diff_file: Path, json_output: Path, timeout: int = 600) 
     exits with "error: --json-output is only supported in plain-diff mode").
     """
     cmd = [
-        "uv", "tool", "run", "--from", "pr-agent", "pr-agent",
+        "uv", "tool", "run", "--from", f"pr-agent=={tool_version}" if tool_version else "pr-agent", "pr-agent",
         "--diff-file", str(diff_file),
         "--json-output", str(json_output),
         "review",
     ]
-    return run_cli(cmd, timeout=timeout, env=build_pragent_env())
+    return run_cli(cmd, timeout=timeout, env=build_pragent_env(), cancel_event=cancel_event)
 
 
 def parse_pragent_json(payload: dict[str, Any]) -> list[Finding]:
@@ -130,5 +134,4 @@ def load_pragent_findings(path: Path) -> list[Finding]:
     with path.open() as fh:
         payload = json.load(fh)
     return parse_pragent_json(payload)
-
 

@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from benchmark.runengine import candidate as candidate_module
 from benchmark.runengine.candidate import CandidateNotUsable, CandidateVersion, require_passed
 from benchmark.runengine.plan import PlanRequest, create_plan
 
@@ -33,6 +34,31 @@ def test_require_passed_rejects_failed() -> None:
     """Verify require passed rejects failed."""
     with pytest.raises(CandidateNotUsable):
         require_passed(_candidate("failed"))
+
+
+def test_capability_probe_uses_the_registered_tool_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        captured.append(command)
+        return type("Completed", (), {"returncode": 0, "stderr": ""})()
+
+    monkeypatch.setattr(candidate_module.subprocess, "run", fake_run)
+
+    assert candidate_module.run_capability_probe("gito", "1.2.3")[0] == "passed"
+    assert "gito.bot==1.2.3" in captured[0]
+
+
+def test_capability_probe_records_a_missing_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
+    def missing_launcher(command, **kwargs):
+        raise FileNotFoundError("uv")
+
+    monkeypatch.setattr(candidate_module.subprocess, "run", missing_launcher)
+
+    status, result = candidate_module.run_capability_probe("gito", "1.2.3")
+
+    assert status == "failed"
+    assert result["error"] == "launch_failed"
 
 
 class _FakeCursor:

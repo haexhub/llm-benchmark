@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -114,14 +115,19 @@ def build_blind_prompt(a: Finding, b: Finding, pr_context: str) -> _BlindPresent
 
 def build_blind_novel_finding_prompt(finding: Finding, item_context: str) -> _BlindPresentation:
     """Anonymize a single finding for novel-defect review — no tool name included."""
+    def _anonymize(text: str | None) -> str:
+        if not text:
+            return ""
+        return re.sub(rf"(?<!\w){re.escape(finding.tool)}(?!\w)", "[tool]", text, flags=re.IGNORECASE)
+
     body = (
         f"{NOVEL_FINDING_INSTRUCTIONS}\n\n"
         f"Finding for fixture item {item_context!r}:\n\n"
         f"  file:   {finding.file}\n"
         f"  lines:  {finding.line_start}-{finding.line_end}\n"
-        f"  title:  {finding.title}\n"
-        f"  body:   {finding.body}\n"
-        + (f"  suggestion: {finding.suggestion}\n" if finding.suggestion else "")
+        f"  title:  {_anonymize(finding.title)}\n"
+        f"  body:   {_anonymize(finding.body)}\n"
+        + (f"  suggestion: {_anonymize(finding.suggestion)}\n" if finding.suggestion else "")
         + "Answer only with the JSON object."
     )
     return _BlindPresentation(

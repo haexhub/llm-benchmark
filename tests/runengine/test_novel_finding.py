@@ -72,6 +72,17 @@ def test_blind_prompt_never_mentions_the_tool_name() -> None:
     assert "pr-agent" not in prep.prompt_text.lower()
 
 
+def test_blind_prompt_anonymizes_tool_names_in_displayed_fields() -> None:
+    finding = _finding().model_copy(update={
+        "title": "gito reports an unsafe change",
+        "body": "The gito implementation misses validation.",
+        "suggestion": "Update gito before returning.",
+    })
+    prep = build_blind_novel_finding_prompt(finding, "demo-item")
+    assert "gito" not in prep.prompt_text.lower()
+    assert prep.prompt_text.count("[tool]") == 3
+
+
 def test_record_novel_finding_review_persists_the_verdict() -> None:
     """Verify record novel finding review persists the verdict."""
     conn = _FakeConnection()

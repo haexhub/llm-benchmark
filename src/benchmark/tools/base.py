@@ -6,6 +6,8 @@ import logging
 import os
 import signal
 import subprocess
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +32,7 @@ def run_cli(
     timeout: int,
     env: dict[str, str] | None = None,
     cwd: Path | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> RunResult:
     """Run `cmd`, killing its whole process group on timeout.
 
@@ -42,6 +45,8 @@ def run_cli(
     process group so a timeout can take all of it out via `os.killpg`.
     """
     log.debug("running: %s", " ".join(cmd))
+    if cancel_event is not None and cancel_event.is_set():
+        return RunResult(returncode=-1, stdout="", stderr="cancelled")
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -51,12 +56,24 @@ def run_cli(
         cwd=cwd,
         start_new_session=True,
     )
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        log.warning("timeout after %ss for %s — killing process group", timeout, cmd[0])
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        stdout, stderr = proc.communicate()
-        return RunResult(returncode=-1, stdout=stdout or "", stderr=stderr or "", timed_out=True)
-    return RunResult(returncode=proc.returncode, stdout=stdout, stderr=stderr)
+    deadline = time.monotonic() + timeout
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            stdout, stderr = proc.communicate()
+            return RunResult(returncode=-1, stdout=stdout or "", stderr=stderr or "cancelled")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            log.warning("timeout after %ss for %s — killing process group", timeout, cmd[0])
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            stdout, stderr = proc.communicate()
+            return RunResult(returncode=-1, stdout=stdout or "", stderr=stderr or "", timed_out=True)
+        try:
+            stdout, stderr = proc.communicate(
+                timeout=min(remaining, 0.1) if cancel_event is not None else remaining
+            )
+        except subprocess.TimeoutExpired:
+            continue
+        return RunResult(returncode=proc.returncode, stdout=stdout, stderr=stderr)

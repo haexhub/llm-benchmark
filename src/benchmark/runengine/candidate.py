@@ -34,9 +34,11 @@ class CandidateNotUsable(Exception):
     """A plan referenced a candidate version whose probe hasn't passed (FR-012)."""
 
 
-def run_capability_probe(slug: str, *, timeout: int = 120) -> tuple[ProbeStatus, dict]:
+def run_capability_probe(
+    slug: str, tool_version: str, *, timeout: int = 120
+) -> tuple[ProbeStatus, dict[str, object]]:
     """`uv tool run --from <package> <slug> --help` must exit 0 to pass."""
-    package = _PACKAGE_BY_SLUG[slug]
+    package = f"{_PACKAGE_BY_SLUG[slug]}=={tool_version}"
     try:
         proc = subprocess.run(
             ["uv", "tool", "run", "--from", package, slug, "--help"],
@@ -44,6 +46,8 @@ def run_capability_probe(slug: str, *, timeout: int = 120) -> tuple[ProbeStatus,
         )
     except subprocess.TimeoutExpired as error:
         return "failed", {"error": "timeout", "detail": str(error)}
+    except OSError as error:
+        return "failed", {"error": "launch_failed", "detail": str(error)}
     passed = proc.returncode == 0
     return (
         "passed" if passed else "failed",
@@ -62,7 +66,7 @@ def register_candidate(
     """Register a candidate version and run its capability probe immediately."""
     if slug not in _PACKAGE_BY_SLUG:
         raise ValueError(f"Unknown candidate slug: {slug!r}")
-    status, probe_result = run_capability_probe(slug)
+    status, probe_result = run_capability_probe(slug, tool_version)
     candidate_id = uuid4()
     with conn.cursor() as cur:
         cur.execute(

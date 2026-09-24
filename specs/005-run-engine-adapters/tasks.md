@@ -103,14 +103,10 @@ terminal, audited state.
 - [x] T027 [US2] Record `queued_at`/`leased_at`/`started_at`/`evaluated_at`/`finished_at` separately per Attempt in `src/benchmark/runengine/attempts.py` (depends on T026)
 - [x] T028 [US2] `db`-marked integration test: a runengine Attempt and a simulated feature-004 live-challenger attempt both targeting `local-94gb-gpu` never execute concurrently, in `tests/integration/test_runengine_shared_lease.py` (depends on T026)
 
-Implementation note (T026): renews the lease once before the (synchronous,
-blocking) tool call rather than heartbeating from a background thread during
-it — marked with a `ponytail:` comment in attempts.py. Safe only because
-`LEASE_TTL_SECONDS` (3600s) comfortably exceeds the default execution timeout
-(1800s); `run_attempt` now raises if a caller ever passes `timeout >=
-LEASE_TTL_SECONDS`, so this assumption can't silently stop holding. A true
-mid-execution heartbeat with subprocess-group termination is the upgrade path
-if a future candidate needs a longer per-attempt timeout.
+Implementation note (T026): `run_attempt` starts a background heartbeat for
+the complete candidate execution. The cancellation event reaches `run_cli`,
+which kills and waits for the candidate's process group when lease renewal
+fails; ownership is checked again before any success/evaluation writes.
 T028's test doesn't actually need Postgres/MinIO (pure SQLite lease file), so
 it isn't `-m db`-marked despite the task text — see the test file's docstring.
 

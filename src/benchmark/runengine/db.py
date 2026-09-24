@@ -27,6 +27,9 @@ def run_migrations(conn: psycopg.Connection, *, migrations_dir: Path = MIGRATION
     """Apply every not-yet-applied `NNNN_*.sql` file in order; return newly-applied filenames."""
     with conn.cursor() as cur:
         cur.execute(_SCHEMA_MIGRATIONS_TABLE)
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('benchmark.runengine.schema_migrations'))"
+        )
         cur.execute("SELECT filename FROM schema_migrations")
         applied = {row[0] for row in cur.fetchall()}
 

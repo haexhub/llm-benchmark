@@ -406,6 +406,14 @@ def runengine_plan_create(
             created_by=env("USER", "unknown"),
         )
         plan = create_plan(conn, request)
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM attempt WHERE plan_id = %s", (plan.id,))
+            (existing_attempts,) = cur.fetchone()
+        if existing_attempts:
+            console.print(
+                f"[yellow]Plan {plan.id} already exists with {existing_attempts} attempts — nothing queued.[/yellow]"
+            )
+            return
         store = ArtifactStore()
         store.ensure_bucket()
         attempts = create_attempts(
@@ -456,6 +464,7 @@ def runengine_plan_run(
                 candidate_slug=candidate_version.slug, model=env("TOOL_LLM_MODEL", "unknown"),
                 config_hash=candidate_version.model_endpoint_config_hash,
                 workspace_root=workspace_root, runs_dir=_ctx["runs_dir"],
+                tool_version=candidate_version.tool_version,
                 oracle_root=oracle_dir,
             )
             if outcome is None:

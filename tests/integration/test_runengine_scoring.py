@@ -21,6 +21,14 @@ from benchmark.runengine.plan import PlanRequest, create_plan
 from benchmark.runengine.scoring import compute_scores
 
 
+@pytest.fixture(autouse=True)
+def _stub_capability_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "benchmark.runengine.candidate.run_capability_probe",
+        lambda slug, tool_version: ("passed", {"stub": True}),
+    )
+
+
 def _run_git(*args: str, cwd: Path) -> str:
     """Run a Git command in the temporary fixture repository."""
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
@@ -119,6 +127,14 @@ class _AlwaysNotDefectJudge:
         )
 
 
+class _AlwaysPlausibleDefectJudge:
+    def evaluate_novel_finding(self, finding: Finding, *, item_context: str) -> NovelFindingVerdict:
+        return NovelFindingVerdict(
+            verdict="plausible_novel_defect", reasoning="test stub", judge_model="test",
+            prompt_hash="c" * 64,
+        )
+
+
 @pytest.mark.db
 def test_score_matches_hand_computed_recall_precision_f1(tmp_path: Path) -> None:
     """Verify score matches hand computed recall precision f1."""
@@ -197,44 +213,54 @@ def test_novel_finding_judge_verdict_never_changes_the_score(tmp_path: Path) -> 
         model_endpoint_config_hash="e" * 64,
     )
     suite_manifest = yaml.safe_load((corpus_root / "suite.yaml").read_text())
-    plan = create_plan(
-        conn,
-        PlanRequest(
-            suite_version_digest=suite_manifest["content_digest"],
-            candidate_version_ids=(candidate.id,), repetitions=1, retry_cap=0,
-            score_policy_version="review-v1-policy-1", created_by=f"test-{uuid4()}",
-        ),
-    )
-    attempts = create_attempts(
-        conn, store, plan, ["demo-item"], model="test-model",
-        config_hash_by_candidate={candidate.id: candidate.model_endpoint_config_hash},
-    )
-
     novel_finding = Finding(
         id=uuid4(), tool="gito", file="service.py", line_start=1, line_end=1,
         severity="minor", category="style", title="novel", body="beyond gold",
     )
-    run_attempt(
-        conn, store, attempt_id=attempts[0].id, corpus_root=corpus_root, item_id="demo-item",
-        candidate_slug="gito", model="test-model",
-        config_hash=candidate.model_endpoint_config_hash,
-        workspace_root=tmp_path / "workspaces", runs_dir=tmp_path / "runs",
-        executor=_make_executor((novel_finding,)), oracle_root=oracle_root,
-        novel_finding_judge=_AlwaysNotDefectJudge(),
-    )
-
-    metrics_before = compute_scores(conn, plan_id=plan.id, candidate_version_id=candidate.id)
-    # A stubbed judge already ran above; recompute is a no-op, only checking
-    # the score is exactly what the Oracle-only classification produced.
-    assert metrics_before["recall"].value == 0.0  # missed the one real Gold label
-    assert metrics_before["precision"].value == 0.0  # the one finding was unmatched_gold
-
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT verdict FROM novel_finding_review nfr JOIN evaluation e ON e.id = nfr.evaluation_id "
-            "WHERE e.attempt_id = %s",
-            (attempts[0].id,),
+    metrics_by_verdict = {}
+    for judge, expected_verdict in (
+        (_AlwaysNotDefectJudge(), "not_defect"),
+        (_AlwaysPlausibleDefectJudge(), "plausible_novel_defect"),
+    ):
+        plan = create_plan(
+            conn,
+            PlanRequest(
+                suite_version_digest=suite_manifest["content_digest"],
+                candidate_version_ids=(candidate.id,), repetitions=1, retry_cap=0,
+                score_policy_version="review-v1-policy-1", created_by=f"test-{uuid4()}",
+            ),
         )
-        (verdict,) = cur.fetchone()
-    assert verdict == "not_defect"
+        attempts = create_attempts(
+            conn, store, plan, ["demo-item"], model="test-model",
+            config_hash_by_candidate={candidate.id: candidate.model_endpoint_config_hash},
+        )
+        run_attempt(
+            conn, store, attempt_id=attempts[0].id, corpus_root=corpus_root, item_id="demo-item",
+            candidate_slug="gito", model="test-model",
+            config_hash=candidate.model_endpoint_config_hash,
+            workspace_root=tmp_path / f"workspaces-{expected_verdict}", runs_dir=tmp_path / "runs",
+            executor=_make_executor((novel_finding,)), oracle_root=oracle_root,
+            novel_finding_judge=judge,
+        )
+        metrics_by_verdict[expected_verdict] = compute_scores(
+            conn, plan_id=plan.id, candidate_version_id=candidate.id
+        )
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT verdict FROM novel_finding_review nfr JOIN evaluation e ON e.id = nfr.evaluation_id "
+                "WHERE e.attempt_id = %s",
+                (attempts[0].id,),
+            )
+            (verdict,) = cur.fetchone()
+        assert verdict == expected_verdict
+
+    for metrics in metrics_by_verdict.values():
+        assert metrics["recall"].value == 0.0
+        assert metrics["precision"].value == 0.0
+    assert metrics_by_verdict["not_defect"]["recall"].value == metrics_by_verdict[
+        "plausible_novel_defect"
+    ]["recall"].value
+    assert metrics_by_verdict["not_defect"]["precision"].value == metrics_by_verdict[
+        "plausible_novel_defect"
+    ]["precision"].value
     conn.close()

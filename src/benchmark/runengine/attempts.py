@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -17,7 +19,7 @@ import yaml
 
 from benchmark.corpus import RunnerInput, materialize_review_input
 from benchmark.corpus.oracle import ProtectedDefectLabel, validate_protected_defect_label
-from benchmark.live import SqliteResourceLeaseStore
+from benchmark.live import ResourceLease, SqliteResourceLeaseStore
 from benchmark.matching.judge import NovelFindingVerdict, make_novel_finding_judge
 from benchmark.models import Finding
 from benchmark.runengine.artifacts import ArtifactStore
@@ -44,6 +46,7 @@ LEASE_TTL_SECONDS = 3600
 # pulling in benchmark.reports, which exists in the primary checkout but was
 # never actually committed to git (breaks on any fresh clone/worktree).
 DEFAULT_TIMEOUT_SECONDS = 1800
+LEASE_HEARTBEAT_INTERVAL_SECONDS = LEASE_TTL_SECONDS / 3
 
 CAPABILITY_PROFILE_ID = uuid5(NAMESPACE_URL, "runengine-v1-capability-profile")
 
@@ -184,17 +187,22 @@ class CandidateExecutor(Protocol):
     def __call__(
         self, *, candidate_slug: str, corpus_root: Path, item_id: str,
         runner_input: RunnerInput, work_dir: Path, timeout: int,
+        tool_version: str | None = None, cancel_event: threading.Event | None = None,
     ) -> ToolExecutionOutcome: ...
 
 
 def default_candidate_executor(
     *, candidate_slug: str, corpus_root: Path, item_id: str,
     runner_input: RunnerInput, work_dir: Path, timeout: int,
+    tool_version: str | None = None, cancel_event: threading.Event | None = None,
 ) -> ToolExecutionOutcome:
     """Run the real gito or pr-agent CLI against a materialized corpus item."""
     if candidate_slug == "pr-agent":
         out_file = work_dir / "pr-agent.json"
-        result = run_pragent_on_diff(runner_input.diff_file, out_file, timeout=timeout)
+        result = run_pragent_on_diff(
+            runner_input.diff_file, out_file, timeout=timeout,
+            cancel_event=cancel_event, tool_version=tool_version,
+        )
         return _finish_execution(result, out_file, load_pragent_findings)
     if candidate_slug == "gito":
         manifest = yaml.safe_load(runner_input.manifest_file.read_text())
@@ -202,10 +210,29 @@ def default_candidate_executor(
         clone_dir = work_dir / "gito-clone"
         out_dir = work_dir / "gito-out"
         result = run_gito_on_bundle(
-            bundle, manifest["base_sha"], manifest["head_sha"], clone_dir, out_dir, timeout=timeout
+            bundle, manifest["base_sha"], manifest["head_sha"], clone_dir, out_dir,
+            timeout=timeout, cancel_event=cancel_event, tool_version=tool_version,
         )
         return _finish_execution(result, out_dir / GITO_REPORT_FILENAME, load_gito_findings)
     raise ValueError(f"Unknown candidate slug: {candidate_slug!r}")
+
+
+def _renew_lease_until_stopped(
+    lease: ResourceLease,
+    stop_event: threading.Event,
+    lease_lost_event: threading.Event,
+) -> None:
+    """Renew a lease independently while a blocking candidate process runs."""
+    while not stop_event.wait(LEASE_HEARTBEAT_INTERVAL_SECONDS):
+        try:
+            renewed = lease.renew(ttl_seconds=LEASE_TTL_SECONDS)
+        except (OSError, sqlite3.Error):
+            log.exception("lease heartbeat failed for %s", lease.resource)
+            renewed = False
+        if not renewed:
+            lease_lost_event.set()
+            log.error("lost %s lease during candidate execution", RESOURCE_NAME)
+            return
 
 
 def _finish_execution(
@@ -245,6 +272,7 @@ def run_attempt(
     config_hash: str,
     workspace_root: Path,
     runs_dir: Path,
+    tool_version: str | None = None,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     executor: CandidateExecutor = default_candidate_executor,
     lease_store: SqliteResourceLeaseStore | None = None,
@@ -262,10 +290,7 @@ def run_attempt(
     real sleep — see test_lease_recovery.py.
     """
     if timeout >= LEASE_TTL_SECONDS:
-        raise ValueError(
-            f"timeout ({timeout}s) must be well below LEASE_TTL_SECONDS ({LEASE_TTL_SECONDS}s) — "
-            "the single pre-execution renew() only holds if no single execution can outlive it"
-        )
+        raise ValueError(f"timeout ({timeout}s) must be below LEASE_TTL_SECONDS ({LEASE_TTL_SECONDS}s)")
     worker_id = f"runengine-{attempt_id}"
     if lease_store is None:
         lease_store = SqliteResourceLeaseStore(runs_dir / "run-engine.sqlite3")
@@ -280,6 +305,14 @@ def run_attempt(
         )
     conn.commit()
 
+    heartbeat_stop = threading.Event()
+    lease_lost = threading.Event()
+    heartbeat = threading.Thread(
+        target=_renew_lease_until_stopped,
+        args=(lease, heartbeat_stop, lease_lost),
+        name=f"runengine-lease-{attempt_id}", daemon=True,
+    )
+    heartbeat.start()
     try:
         work_dir = workspace_root / str(attempt_id)
         with conn.cursor() as cur:
@@ -302,17 +335,17 @@ def run_attempt(
             _mark_terminal(conn, attempt_id, status="failed", reason="lost resource lease")
             return None
 
-        # ponytail: this renews once before executing rather than heartbeating
-        # from a background thread during the (synchronous, blocking) tool
-        # call — safe only because LEASE_TTL_SECONDS (3600s) comfortably
-        # exceeds `timeout` (default 1800s), so no single execution can
-        # outlive the lease it already holds. If a future candidate's timeout
-        # could exceed the lease TTL, this needs a real mid-execution
-        # heartbeat (and killing the subprocess group on renewal failure).
         outcome = executor(
             candidate_slug=candidate_slug, corpus_root=corpus_root, item_id=item_id,
             runner_input=runner_input, work_dir=work_dir, timeout=timeout,
+            tool_version=tool_version, cancel_event=lease_lost,
         )
+
+        heartbeat_stop.set()
+        heartbeat.join()
+        if lease_lost.is_set() or not lease.renew(ttl_seconds=LEASE_TTL_SECONDS):
+            _mark_terminal(conn, attempt_id, status="failed", reason="lost resource lease")
+            return None
 
         evaluated_at = datetime.now(UTC)
         with conn.cursor() as cur:
@@ -348,7 +381,17 @@ def run_attempt(
         if failure_class == "transient":
             _maybe_create_retry(conn, store, attempt_id, model=model, config_hash=config_hash)
         return outcome
+    except Exception as error:
+        conn.rollback()
+        log.exception("attempt %s crashed", attempt_id)
+        _mark_terminal(
+            conn, attempt_id, status="failed",
+            reason=f"non_transient: {type(error).__name__}: {str(error)[:500]}",
+        )
+        raise
     finally:
+        heartbeat_stop.set()
+        heartbeat.join()
         lease.release()
 
 

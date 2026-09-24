@@ -85,9 +85,13 @@ def _stub_executor(**kwargs) -> ToolExecutionOutcome:
 
 @pytest.mark.db
 def test_plan_create_then_run_produces_distinct_manifests_with_no_oracle_leakage(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify plan create then run produces distinct manifests with no oracle leakage."""
+    monkeypatch.setattr(
+        "benchmark.runengine.candidate.run_capability_probe",
+        lambda slug, tool_version: ("passed", {"stub": True}),
+    )
     corpus_root = _create_single_item_corpus(tmp_path)
     conn = connect()
     run_migrations(conn)

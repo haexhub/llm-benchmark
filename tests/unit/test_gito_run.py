@@ -16,7 +16,7 @@ from benchmark.tools import gito
 def test_run_gito_on_pr_passes_absolute_out_path(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run_cli(cmd, *, timeout, env=None, cwd=None):
+    def fake_run_cli(cmd, *, timeout, env=None, cwd=None, cancel_event=None):
         captured["cmd"] = cmd
         captured["cwd"] = cwd
         from benchmark.tools.base import RunResult
@@ -39,7 +39,7 @@ def test_run_gito_on_pr_passes_absolute_out_path(monkeypatch, tmp_path: Path) ->
 def test_run_gito_on_pr_fetches_the_pinned_head_sha(monkeypatch, tmp_path: Path) -> None:
     calls: list[list[str]] = []
 
-    def fake_run_cli(cmd, *, timeout, env=None, cwd=None):
+    def fake_run_cli(cmd, *, timeout, env=None, cwd=None, cancel_event=None):
         calls.append(cmd)
         from benchmark.tools.base import RunResult
 

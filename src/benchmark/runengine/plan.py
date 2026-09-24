@@ -79,30 +79,26 @@ def create_plan(conn: psycopg.Connection, request: PlanRequest) -> ExecutionPlan
     key = idempotency_key(request)
     with conn.cursor() as cur:
         cur.execute(
+            """
+            INSERT INTO execution_plan
+                (id, suite_version_digest, candidate_version_ids, repetitions, retry_cap,
+                 resource_profile, score_policy_version, comparison_axis, idempotency_key,
+                 created_by, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (created_by, idempotency_key) DO NOTHING
+            """,
+            (
+                uuid4(), request.suite_version_digest, list(request.candidate_version_ids),
+                request.repetitions, request.retry_cap, RESOURCE_PROFILE,
+                request.score_policy_version, COMPARISON_AXIS, key, request.created_by,
+                datetime.now(UTC),
+            ),
+        )
+        cur.execute(
             "SELECT id, created_at FROM execution_plan WHERE created_by = %s AND idempotency_key = %s",
             (request.created_by, key),
         )
-        existing = cur.fetchone()
-        if existing is not None:
-            plan_id, created_at = existing
-        else:
-            plan_id = uuid4()
-            created_at = datetime.now(UTC)
-            cur.execute(
-                """
-                INSERT INTO execution_plan
-                    (id, suite_version_digest, candidate_version_ids, repetitions, retry_cap,
-                     resource_profile, score_policy_version, comparison_axis, idempotency_key,
-                     created_by, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    plan_id, request.suite_version_digest, list(request.candidate_version_ids),
-                    request.repetitions, request.retry_cap, RESOURCE_PROFILE,
-                    request.score_policy_version, COMPARISON_AXIS, key, request.created_by,
-                    created_at,
-                ),
-            )
+        plan_id, created_at = cur.fetchone()
     conn.commit()
     return ExecutionPlan(
         id=plan_id,
