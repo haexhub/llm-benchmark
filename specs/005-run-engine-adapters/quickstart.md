@@ -12,8 +12,8 @@ uv run ruff check .
 `.env` additions beyond the existing `TOOL_LLM_*`/`JUDGE_LLM_*` variables:
 
 ```bash
-RUNENGINE_DATABASE_URL=postgresql://benchmark:benchmark@localhost:5432/runengine
-RUNENGINE_S3_ENDPOINT_URL=http://localhost:9000
+RUNENGINE_DATABASE_URL=postgresql://benchmark:benchmark@localhost:5433/runengine
+RUNENGINE_S3_ENDPOINT_URL=http://localhost:9010
 RUNENGINE_S3_BUCKET=runengine-artifacts
 RUNENGINE_S3_ACCESS_KEY=...
 RUNENGINE_S3_SECRET_KEY=...

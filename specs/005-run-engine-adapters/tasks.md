@@ -21,10 +21,10 @@ enable independent implementation and testing of each story.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create `docker-compose.yml` at repo root with `postgres` and `minio` services (research.md R5)
-- [ ] T002 [P] Add `psycopg[binary]>=3.2` and `boto3>=1.34` to `pyproject.toml` dependencies
-- [ ] T003 [P] Add a `db` pytest marker and change default `addopts` to `-m 'not live and not db'` in `pyproject.toml`
-- [ ] T004 [P] Extend `.env.example` with `RUNENGINE_DATABASE_URL`, `RUNENGINE_S3_ENDPOINT_URL`/`_BUCKET`/`_ACCESS_KEY`/`_SECRET_KEY` and `NOVEL_DEFECT_JUDGE_MODEL`
+- [x] T001 Create `docker-compose.yml` at repo root with `postgres` and `minio` services (research.md R5)
+- [x] T002 [P] Add `psycopg[binary]>=3.2` and `boto3>=1.34` to `pyproject.toml` dependencies
+- [x] T003 [P] Add a `db` pytest marker and change default `addopts` to `-m 'not live and not db'` in `pyproject.toml`
+- [x] T004 [P] Extend `.env.example` with `RUNENGINE_DATABASE_URL`, `RUNENGINE_S3_ENDPOINT_URL`/`_BUCKET`/`_ACCESS_KEY`/`_SECRET_KEY` and `NOVEL_DEFECT_JUDGE_MODEL`
 
 ---
 
