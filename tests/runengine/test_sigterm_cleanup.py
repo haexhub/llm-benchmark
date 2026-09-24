@@ -153,6 +153,9 @@ def test_sigterm_during_candidate_execution_releases_lease_and_marks_terminal(
         if p and p[0] in {"failed", "succeeded", "invalid", "timed_out"}
     ]
     assert terminal_updates, "expected the attempt to reach a terminal status, not stay 'running'"
+    assert any(p[0] == "failed" for p in terminal_updates), (
+        "expected SIGTERM cleanup to mark the attempt failed"
+    )
     assert not any(p[0] == "succeeded" for p in terminal_updates)
     assert any("signal" in (p[1] or "") for p in terminal_updates), (
         "expected an accurate terminal reason distinguishing a signal interrupt "

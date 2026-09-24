@@ -323,8 +323,10 @@ def run_attempt(
         args=(lease, heartbeat_stop, lease_lost),
         name=f"runengine-lease-{attempt_id}", daemon=True,
     )
-    heartbeat.start()
+    heartbeat_started = False
     try:
+        heartbeat.start()
+        heartbeat_started = True
         work_dir = workspace_root / str(attempt_id)
         with conn.cursor() as cur:
             cur.execute(
@@ -375,6 +377,9 @@ def run_attempt(
                     conn, attempt_id=attempt_id, item_id=item_id, oracle_root=oracle_root,
                     findings=outcome.findings, novel_finding_judge=novel_finding_judge,
                 )
+            if interrupted.is_set():
+                _mark_terminal(conn, attempt_id, status="failed", reason="interrupted by signal")
+                return None
             _mark_terminal(conn, attempt_id, status="succeeded", reason=None)
             return outcome
 
@@ -403,10 +408,13 @@ def run_attempt(
         )
         raise
     finally:
-        heartbeat_stop.set()
-        heartbeat.join()
-        lease.release()
-        signal.signal(signal.SIGTERM, previous_sigterm_handler)
+        try:
+            heartbeat_stop.set()
+            if heartbeat_started:
+                heartbeat.join()
+            lease.release()
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm_handler)
 
 
 def _mark_terminal(conn: psycopg.Connection, attempt_id: UUID, *, status: str, reason: str | None) -> None:
