@@ -21,10 +21,10 @@ enable independent implementation and testing of each story.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create `docker-compose.yml` at repo root with `postgres` and `minio` services (research.md R5)
-- [ ] T002 [P] Add `psycopg[binary]>=3.2` and `boto3>=1.34` to `pyproject.toml` dependencies
-- [ ] T003 [P] Add a `db` pytest marker and change default `addopts` to `-m 'not live and not db'` in `pyproject.toml`
-- [ ] T004 [P] Extend `.env.example` with `RUNENGINE_DATABASE_URL`, `RUNENGINE_S3_ENDPOINT_URL`/`_BUCKET`/`_ACCESS_KEY`/`_SECRET_KEY` and `NOVEL_DEFECT_JUDGE_MODEL`
+- [x] T001 Create `docker-compose.yml` at repo root with `postgres` and `minio` services (research.md R5)
+- [x] T002 [P] Add `psycopg[binary]>=3.2` and `boto3>=1.34` to `pyproject.toml` dependencies
+- [x] T003 [P] Add a `db` pytest marker and change default `addopts` to `-m 'not live and not db'` in `pyproject.toml`
+- [x] T004 [P] Extend `.env.example` with `RUNENGINE_DATABASE_URL`, `RUNENGINE_S3_ENDPOINT_URL`/`_BUCKET`/`_ACCESS_KEY`/`_SECRET_KEY` and `NOVEL_DEFECT_JUDGE_MODEL`
 
 ---
 
@@ -32,12 +32,12 @@ enable independent implementation and testing of each story.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T005 Write migration `0001_initial.sql` (`candidate_version`, `execution_plan`, `attempt`, `score`, `evaluation`, `novel_finding_review`, `gold_label_candidate` tables per data-model.md) in `src/benchmark/runengine/migrations/0001_initial.sql`
-- [ ] T008 [P] Author the unit test that will verify the migration runner applies `0001_initial.sql` idempotently, in `tests/runengine/test_db.py`; execute it after T006
-- [ ] T009 [P] Author the `db`-marked integration test that will verify `db.py` connects/migrates and `artifacts.py` round-trips a blob against the docker-compose stack, in `tests/integration/test_runengine_infra.py`; execute it after T006 and T007
-- [ ] T006 Implement the psycopg connection helper + migration runner in `src/benchmark/runengine/db.py` (depends on T005 and the test authored in T008)
-- [ ] T007 [P] Implement S3-compatible content-addressed artifact put/get in `src/benchmark/runengine/artifacts.py` (depends on the test authored in T009)
-- [ ] T010 Mount an empty `runengine_app` Typer sub-app (`app.add_typer(runengine_app, name="runengine")`) in `src/benchmark/cli.py`
+- [x] T005 Write migration `0001_initial.sql` (`candidate_version`, `execution_plan`, `attempt`, `score`, `evaluation`, `novel_finding_review`, `gold_label_candidate` tables per data-model.md) in `src/benchmark/runengine/migrations/0001_initial.sql`
+- [x] T008 [P] Author the unit test that will verify the migration runner applies `0001_initial.sql` idempotently, in `tests/runengine/test_db.py`; execute it after T006
+- [x] T009 [P] Author the `db`-marked integration test that will verify `db.py` connects/migrates and `artifacts.py` round-trips a blob against the docker-compose stack, in `tests/integration/test_runengine_infra.py`; execute it after T006 and T007
+- [x] T006 Implement the psycopg connection helper + migration runner in `src/benchmark/runengine/db.py` (depends on T005 and the test authored in T008)
+- [x] T007 [P] Implement S3-compatible content-addressed artifact put/get in `src/benchmark/runengine/artifacts.py` (depends on the test authored in T009)
+- [x] T010 Mount an empty `runengine_app` Typer sub-app (`app.add_typer(runengine_app, name="runengine")`) in `src/benchmark/cli.py`
 
 **Checkpoint**: Foundation ready — user stories can now proceed.
 
@@ -56,22 +56,27 @@ digest (per spec.md's Independent Test for US1).
 
 ### Tests for User Story 1
 
-- [ ] T011 [P] [US1] Unit test: an identical plan request returns the existing plan instead of creating a duplicate, in `tests/runengine/test_plan.py`
-- [ ] T012 [P] [US1] Unit test: attempt manifest fields (`is_warmup=false`, `comparison_axis="end_to_end_agent"`, matches `specs/002-benchmark-platform/contracts/attempt-manifest.schema.json`) and fresh-workspace Oracle isolation, in `tests/runengine/test_attempts.py`
-- [ ] T013 [P] [US1] Unit test: subprocess `RunResult` timeout and connection/timeout text on stderr map to a retryable terminal reason, while unknown child failures and schema drift do not; verify a transient failure creates a new retry Attempt up to the configured cap and a non-transient failure never retries, in `tests/runengine/test_retry.py`
-- [ ] T014 [P] [US1] Contract test: a plan request built by `plan.py` validates against `contracts/execution-plan-request.schema.json`, in `tests/runengine/test_contracts.py`
+- [x] T011 [P] [US1] Unit test: an identical plan request returns the existing plan instead of creating a duplicate, in `tests/runengine/test_plan.py`
+- [x] T012 [P] [US1] Unit test: attempt manifest fields (`is_warmup=false`, `comparison_axis="end_to_end_agent"`, matches `specs/002-benchmark-platform/contracts/attempt-manifest.schema.json`) and fresh-workspace Oracle isolation, in `tests/runengine/test_attempts.py`
+- [x] T013 [P] [US1] Unit test: subprocess `RunResult` timeout and connection/timeout text on stderr map to a retryable terminal reason, while unknown child failures and schema drift do not; verify a transient failure creates a new retry Attempt up to the configured cap and a non-transient failure never retries, in `tests/runengine/test_retry.py`
+- [x] T014 [P] [US1] Contract test: a plan request built by `plan.py` validates against `contracts/execution-plan-request.schema.json`, in `tests/runengine/test_contracts.py`
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement `ExecutionPlan` creation with idempotency-key lookup in `src/benchmark/runengine/plan.py` (depends on T006)
-- [ ] T016 [US1] Create one `Attempt` row (+ manifest) per candidate × item × repetition in `src/benchmark/runengine/attempts.py` (depends on T015)
-- [ ] T017 [US1] Materialize a fresh workspace from the item's public fixture only, reusing `benchmark.corpus.materialize_review_input`, in `src/benchmark/runengine/attempts.py` (depends on T016)
-- [ ] T018 [US1] Execute the candidate (reusing `tools/gito.py` + `tools/pr_agent.py`) and persist raw output / normalized findings as Artifacts, in `src/benchmark/runengine/attempts.py` (depends on T017, T007)
-- [ ] T019 [US1] Implement transient-vs-non-transient classification (research.md R9) and bounded automatic retry (default 3, runtime-configurable) in `src/benchmark/runengine/retry.py` (depends on T018)
-- [ ] T020 [US1] CLI: `runengine plan create` in `src/benchmark/cli.py` (depends on T015)
-- [ ] T021 [US1] CLI: `runengine plan run` in `src/benchmark/cli.py` (depends on T019)
-- [ ] T022 [US1] CLI: `runengine attempt list` / `runengine attempt show` in `src/benchmark/cli.py` (depends on T016)
-- [ ] T023 [US1] `db`-marked integration test: `plan create` → `plan run` end-to-end with a stubbed candidate executor; verify distinct manifests and zero Oracle files in any workspace, in `tests/integration/test_runengine_plan.py` (depends on T020, T021)
+- [x] T015 [US1] Implement `ExecutionPlan` creation with idempotency-key lookup in `src/benchmark/runengine/plan.py` (depends on T006)
+- [x] T016 [US1] Create one `Attempt` row (+ manifest) per candidate × item × repetition in `src/benchmark/runengine/attempts.py` (depends on T015)
+- [x] T017 [US1] Materialize a fresh workspace from the item's public fixture only, reusing `benchmark.corpus.materialize_review_input`, in `src/benchmark/runengine/attempts.py` (depends on T016)
+- [x] T018 [US1] Execute the candidate (reusing `tools/gito.py` + `tools/pr_agent.py`) and persist raw output / normalized findings as Artifacts, in `src/benchmark/runengine/attempts.py` (depends on T017, T007)
+- [x] T019 [US1] Implement transient-vs-non-transient classification (research.md R9) and bounded automatic retry (default 3, runtime-configurable) in `src/benchmark/runengine/retry.py` (depends on T018)
+- [x] T020 [US1] CLI: `runengine plan create` in `src/benchmark/cli.py` (depends on T015)
+- [x] T021 [US1] CLI: `runengine plan run` in `src/benchmark/cli.py` (depends on T019)
+- [x] T022 [US1] CLI: `runengine attempt list` / `runengine attempt show` in `src/benchmark/cli.py` (depends on T016)
+- [x] T023 [US1] `db`-marked integration test: `plan create` → `plan run` end-to-end with a stubbed candidate executor; verify distinct manifests and zero Oracle files in any workspace, in `tests/integration/test_runengine_plan.py` (depends on T020, T021)
+
+Implementation note: a minimal `candidate.py` (bare `register_candidate`/`get_candidate`,
+no probe gating yet) was added ahead of schedule — US1 cannot create an Attempt without
+a `candidate_version` row to reference (FK). US4 (T042/T043) adds the actual
+capability-probe gate on top of this same table.
 
 **Checkpoint**: User Story 1 is fully functional and independently testable (MVP).
 
@@ -89,14 +94,21 @@ terminal, audited state.
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] Unit test: of several attempts contending for `local-94gb-gpu`, only one executes at a time, in `tests/runengine/test_lease_integration.py`
-- [ ] T025 [P] [US2] Unit test: recovery fences the prior attempt or confirms its endpoint handles are closed before reclaiming an expired lease, then retries or invalidates without double-scoring, in `tests/runengine/test_lease_recovery.py`
+- [x] T024 [P] [US2] Unit test: of several attempts contending for `local-94gb-gpu`, only one executes at a time, in `tests/runengine/test_lease_integration.py`
+- [x] T025 [P] [US2] Unit test: recovery fences the prior attempt or confirms its endpoint handles are closed before reclaiming an expired lease, then retries or invalidates without double-scoring, in `tests/runengine/test_lease_recovery.py`
 
 ### Implementation for User Story 2
 
-- [ ] T026 [US2] Acquire/renew/release through the existing `SqliteResourceLeaseStore` — same `runs/run-engine.sqlite3` file and `local-94gb-gpu` key already used by `pipeline.py` and `live/runner.py` (research.md R3) — maintain an independent heartbeat during candidate execution; if renewal returns `False`, terminate the candidate subprocess/process group and mark the Attempt failed; recovery must fence the prior process group or confirm its endpoint handles are closed before takeover — in `src/benchmark/runengine/attempts.py` (depends on T018)
-- [ ] T027 [US2] Record `queued_at`/`leased_at`/`started_at`/`evaluated_at`/`finished_at` separately per Attempt in `src/benchmark/runengine/attempts.py` (depends on T026)
-- [ ] T028 [US2] `db`-marked integration test: a runengine Attempt and a simulated feature-004 live-challenger attempt both targeting `local-94gb-gpu` never execute concurrently, in `tests/integration/test_runengine_shared_lease.py` (depends on T026)
+- [x] T026 [US2] Acquire/renew/release through the existing `SqliteResourceLeaseStore` — same `runs/run-engine.sqlite3` file and `local-94gb-gpu` key already used by `pipeline.py` and `live/runner.py` (research.md R3) — maintain an independent heartbeat during candidate execution; if renewal returns `False`, terminate the candidate subprocess/process group and mark the Attempt failed; recovery must fence the prior process group or confirm its endpoint handles are closed before takeover — in `src/benchmark/runengine/attempts.py` (depends on T018)
+- [x] T027 [US2] Record `queued_at`/`leased_at`/`started_at`/`evaluated_at`/`finished_at` separately per Attempt in `src/benchmark/runengine/attempts.py` (depends on T026)
+- [x] T028 [US2] `db`-marked integration test: a runengine Attempt and a simulated feature-004 live-challenger attempt both targeting `local-94gb-gpu` never execute concurrently, in `tests/integration/test_runengine_shared_lease.py` (depends on T026)
+
+Implementation note (T026): `run_attempt` starts a background heartbeat for
+the complete candidate execution. The cancellation event reaches `run_cli`,
+which kills and waits for the candidate's process group when lease renewal
+fails; ownership is checked again before any success/evaluation writes.
+T028's test doesn't actually need Postgres/MinIO (pure SQLite lease file), so
+it isn't `-m db`-marked despite the task text — see the test file's docstring.
 
 **Checkpoint**: User Stories 1 and 2 both work independently.
 
@@ -116,20 +128,35 @@ matches hand-computed expectations.
 
 ### Tests for User Story 3
 
-- [ ] T029 [P] [US3] Unit test: evaluator classifies `matched`/`duplicate`/`false_positive`/`insufficient_evidence`/`unmatched_gold` against known Oracle labels, in `tests/runengine/test_evaluator.py`
-- [ ] T030 [P] [US3] Unit test: scoring aggregates recall/precision/F1/false-positive-rate/duplicate-rate/completion-rate with sample count and min–max range across repetitions, treating every repetition as an independent sample, in `tests/runengine/test_scoring.py`
-- [ ] T031 [P] [US3] Unit test: `evaluate_novel_finding` presents blindly (no candidate identity in the prompt) and its verdict never changes computed metrics, in `tests/runengine/test_novel_finding.py`
-- [ ] T032 [P] [US3] Contract test: a built score report validates against `contracts/score-report.schema.json`, with `novel_findings` never folded into `metrics`, in `tests/runengine/test_contracts.py`
+- [x] T029 [P] [US3] Unit test: evaluator classifies `matched`/`duplicate`/`false_positive`/`insufficient_evidence`/`unmatched_gold` against known Oracle labels, in `tests/runengine/test_evaluator.py`
+- [x] T030 [P] [US3] Unit test: scoring aggregates recall/precision/F1/false-positive-rate/duplicate-rate/completion-rate with sample count and min–max range across repetitions, treating every repetition as an independent sample, in `tests/runengine/test_score_aggregation.py` (renamed from tasks.md's `test_scoring.py` — collided with the existing `tests/corpus/test_scoring.py` basename; neither test dir has `__init__.py`)
+- [x] T031 [P] [US3] Unit test: `evaluate_novel_finding` presents blindly (no candidate identity in the prompt) and its verdict never changes computed metrics, in `tests/runengine/test_novel_finding.py`
+- [x] T032 [P] [US3] Contract test: a built score report validates against `contracts/score-report.schema.json`, with `novel_findings` never folded into `metrics`, in `tests/runengine/test_contracts.py`
 
 ### Implementation for User Story 3
 
-- [ ] T033 [P] [US3] Adapt `matching/aggregator.py`'s classification logic against the corpus Oracle's `ground-truth.yaml` labels in `src/benchmark/runengine/evaluator.py` (depends on T018)
-- [ ] T034 [P] [US3] Add `evaluate_novel_finding()` to `src/benchmark/matching/judge.py`, reusing `build_blind_prompt`/`_parse_verdict`, with `NOVEL_DEFECT_JUDGE_MODEL` falling back to `JUDGE_LLM_MODEL` (research.md R4)
-- [ ] T035 [US3] Persist `NovelFindingReview` rows and create `GoldLabelCandidate` rows (`status="proposed"` only) for `plausible_novel_defect` verdicts, in `src/benchmark/runengine/novel_finding.py` (depends on T034)
-- [ ] T036 [P] [US3] Compute per-candidate/suite/policy `Score` rows from independent per-attempt samples with min–max spread, in `src/benchmark/runengine/scoring.py` (depends on T033)
-- [ ] T037 [US3] CLI: `runengine score show` in `src/benchmark/cli.py` (depends on T036)
-- [ ] T038 [US3] CLI: `runengine gold-candidates export` in `src/benchmark/cli.py` (depends on T035)
-- [ ] T039 [US3] `db`-marked integration test: end-to-end plan run against a small fixture suite with known Oracle labels; verify the score report matches hand-computed recall/precision/F1, in `tests/integration/test_runengine_scoring.py` (depends on T037, T023)
+- [x] T033 [P] [US3] Adapt `matching/aggregator.py`'s classification logic against the corpus Oracle's `ground-truth.yaml` labels in `src/benchmark/runengine/evaluator.py` (depends on T018)
+- [x] T034 [P] [US3] Add `evaluate_novel_finding()` to `src/benchmark/matching/judge.py`, reusing `build_blind_prompt`/`_parse_verdict`, with `NOVEL_DEFECT_JUDGE_MODEL` falling back to `JUDGE_LLM_MODEL` (research.md R4)
+- [x] T035 [US3] Persist `NovelFindingReview` rows and create `GoldLabelCandidate` rows (`status="proposed"` only) for `plausible_novel_defect` verdicts, in `src/benchmark/runengine/novel_finding.py` (depends on T034)
+- [x] T036 [P] [US3] Compute per-candidate/suite/policy `Score` rows from independent per-attempt samples with min–max spread, in `src/benchmark/runengine/scoring.py` (depends on T033)
+- [x] T037 [US3] CLI: `runengine score show` in `src/benchmark/cli.py` (depends on T036)
+- [x] T038 [US3] CLI: `runengine gold-candidates export` in `src/benchmark/cli.py` (depends on T035)
+- [x] T039 [US3] `db`-marked integration test: end-to-end plan run against a small fixture suite with known Oracle labels; verify the score report matches hand-computed recall/precision/F1, in `tests/integration/test_runengine_scoring.py` (depends on T037, T023)
+
+Implementation notes:
+- T033 actually reuses `corpus/oracle.py`'s `AffectedScope`/`ProtectedDefectLabel`
+  models and a fresh scope-overlap matcher (±3 lines, matching
+  `matching/structural.py`'s existing convention) — not `matching/aggregator.py`,
+  which turned out to serve a different, human-decision-driven workflow (see
+  evaluator.py's module docstring for the full reasoning and the important
+  terminology note: its `unmatched_gold` means the opposite of
+  `corpus.assessment.FindingAssessment`'s same-named outcome).
+- `false_positive` is only ever assigned automatically for a clean-control item
+  (zero Gold labels); `insufficient_evidence` is reserved, never produced by
+  this automatic evaluator.
+- Operational metrics (`queue_wait_seconds`/`execution_seconds`, FR-005/FR-011)
+  were added to `scoring.py` alongside quality metrics — needed for
+  `score-show`/the contract, not called out as its own task.
 
 **Checkpoint**: US1+US2+US3 — the decision-grade comparison is usable end-to-end.
 
@@ -147,24 +174,54 @@ before any attempt executes.
 
 ### Tests for User Story 4
 
-- [ ] T040 [P] [US4] Unit test: a candidate version with a failing capability probe cannot be referenced by `plan create`, in `tests/runengine/test_candidate.py`
-- [ ] T041 [P] [US4] Unit test: an unrecognized candidate output schema marks the Attempt `invalid` without triggering an auto-retry, in `tests/runengine/test_attempts.py`
+- [x] T040 [P] [US4] Unit test: a candidate version with a failing capability probe cannot be referenced by `plan create`, in `tests/runengine/test_candidate.py`
+- [x] T041 [P] [US4] Unit test: an unrecognized candidate output schema marks the Attempt `invalid` without triggering an auto-retry, in `tests/runengine/test_attempts.py`
 
 ### Implementation for User Story 4
 
-- [ ] T042 [P] [US4] Implement `CandidateVersion` registration + capability probe, reusing `check()`'s reachability logic (research.md R8), in `src/benchmark/runengine/candidate.py` (depends on T006)
-- [ ] T043 [US4] Reject plan creation referencing a `candidate_version` whose probe status isn't `passed`, in `src/benchmark/runengine/plan.py` (depends on T042, T015)
-- [ ] T044 [US4] CLI: `runengine candidate register` in `src/benchmark/cli.py` (depends on T042)
-- [ ] T045 [P] [US4] Detect adapter output schema drift, set `terminal_reason="invalid"`, and exclude it from `retry.py`'s transient set, in `src/benchmark/runengine/attempts.py` (depends on T018)
+- [x] T042 [P] [US4] Implement `CandidateVersion` registration + capability probe, reusing `check()`'s reachability logic (research.md R8), in `src/benchmark/runengine/candidate.py` (depends on T006)
+- [x] T043 [US4] Reject plan creation referencing a `candidate_version` whose probe status isn't `passed`, in `src/benchmark/runengine/plan.py` (depends on T042, T015)
+- [x] T044 [US4] CLI: `runengine candidate register` in `src/benchmark/cli.py` (depends on T042)
+- [x] T045 [P] [US4] Detect adapter output schema drift, set `terminal_reason="invalid"`, and exclude it from `retry.py`'s transient set, in `src/benchmark/runengine/attempts.py` (depends on T018) — already implemented as part of T018/US1; T041 adds the dedicated end-to-end test proving no retry attempt is created.
 
-**Checkpoint**: All four user stories are independently functional.
+**Checkpoint**: All four user stories are independently functional. Verified
+`candidate-register` for real (network available in this environment): a real
+`uv tool run --from gito.bot gito --help` probe passed and persisted.
 
 ---
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T046 [P] Run `quickstart.md` end-to-end against the local docker-compose stack; fix any drift
-- [ ] T047 [P] Full verification: `uv run pytest && uv run pytest -m db && uv run ruff check .` all exit 0
+- [x] T046 [P] Run `quickstart.md` end-to-end against the local docker-compose stack; fix any drift
+- [x] T047 [P] Full verification: `uv run pytest && uv run pytest -m db && uv run ruff check .` all exit 0
+
+Implementation notes:
+- T046 ran every documented command for real (`candidate-register` against a
+  real `gito.bot` install, `plan-create`, `plan-run` against a fake TOOL_LLM
+  endpoint — a genuine transient-vs-non-transient failure path, not a stub —
+  `attempt-list`, `score-show`, `gold-candidates-export`) against a small
+  from-scratch fixture corpus/oracle, not the real 102-item corpus. Found and
+  fixed two real drifts: (1) `quickstart.md`/`contracts/cli.md` still showed
+  the originally-planned `runengine plan create`-style nested subcommands;
+  the actual CLI is flat/hyphenated (`plan-create`) like `corpus
+  approve-label` — docs corrected. (2) `score-show`'s first query selected a
+  nonexistent `candidate_version_id` column on `execution_plan` (which only
+  has the plural `candidate_version_ids` array) — a real bug, not caught by
+  any unit test since none exercised that CLI command directly; fixed, and
+  `--plan`/`--plan-id` flag-name mismatch between docs and code fixed too
+  (`typer.Option("--plan")` explicit now on all three commands taking it).
+- T047: `uv run pytest` → 223 passed, 7 deselected (5 `db`-marked correctly
+  excluded by default addopts, 2 unrelated pre-existing failures — see
+  below). `uv run pytest -m db` → 5 passed. `uv run ruff check .` → clean.
+- Pre-existing, unrelated to this feature: `src/benchmark/reports/` exists in
+  the primary checkout's working tree but was never actually committed to
+  git — breaks `tests/integration/test_idempotency.py`,
+  `tests/live/test_legacy_pipeline_serialization.py`,
+  `tests/unit/test_per_pr_report.py`, `tests/unit/test_summary_stats.py` and
+  one `tests/live/test_cli_ingest.py` test on any fresh clone/worktree
+  (confirmed absent from every branch's history). Not fixed here — out of
+  scope, not caused by this feature, and possibly someone else's in-progress
+  work; flagged to the operator instead.
 
 ---
 

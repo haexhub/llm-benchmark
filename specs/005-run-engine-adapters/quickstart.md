@@ -12,35 +12,40 @@ uv run ruff check .
 `.env` additions beyond the existing `TOOL_LLM_*`/`JUDGE_LLM_*` variables:
 
 ```bash
-RUNENGINE_DATABASE_URL=postgresql://benchmark:benchmark@localhost:5432/runengine
-RUNENGINE_S3_ENDPOINT_URL=http://localhost:9000
+RUNENGINE_DATABASE_URL=postgresql://benchmark:benchmark@localhost:5433/runengine
+RUNENGINE_S3_ENDPOINT_URL=http://localhost:9010
 RUNENGINE_S3_BUCKET=runengine-artifacts
 RUNENGINE_S3_ACCESS_KEY=...
 RUNENGINE_S3_SECRET_KEY=...
 NOVEL_DEFECT_JUDGE_MODEL=claude-opus-5   # optional; falls back to JUDGE_LLM_MODEL
 ```
 
-Register both candidates once, then run the released corpus:
+Register both candidates once (this runs their capability probe for real —
+`uv tool run --from <package> <tool> --help` — and fails loudly if it doesn't
+exit 0), then run the released corpus:
 
 ```bash
-uv run benchmark runengine candidate register --slug gito --tool-version <pinned>
-uv run benchmark runengine candidate register --slug pr-agent --tool-version <pinned>
+uv run benchmark runengine candidate-register --slug gito --tool-version <pinned> --package-digest <sha256>
+uv run benchmark runengine candidate-register --slug pr-agent --tool-version <pinned> --package-digest <sha256>
 
-uv run benchmark runengine plan create \
+uv run benchmark runengine plan-create \
   --suite-dir review-corpus/review-v1 \
   --candidate gito --candidate pr-agent \
   --repetitions 3
 
-uv run benchmark runengine plan run <plan-id>
+uv run benchmark runengine plan-run <plan-id> \
+  --suite-dir review-corpus/review-v1 \
+  --oracle-dir corpus-oracle/review-v1
 
-uv run benchmark runengine score show --plan <plan-id>
-uv run benchmark runengine gold-candidates export --plan <plan-id>
+uv run benchmark runengine score-show --plan <plan-id>
+uv run benchmark runengine gold-candidates-export --plan <plan-id>
 ```
 
-`plan create`/`plan run` are implemented in this feature's tasks; not
-available before `/speckit.tasks` + implementation lands. `runengine
-candidate register`'s capability probe reuses the existing `benchmark check`
-reachability logic (T-numbered in tasks.md).
+Commands are flat and hyphenated (`plan-create`, not a `plan create` subgroup)
+to match the existing `corpus approve-label` convention. Omitting `--oracle-dir`
+on `plan-run` still executes every attempt, but skips evaluation entirely —
+no `evaluation` rows, no score, since the Oracle is only ever read by the
+post-run evaluator, never by a runner.
 
 Every corpus item is materialized into a fresh workspace containing only its
 public Base/Head fixture — never the protected `haexhub/llm-benchmark-review-

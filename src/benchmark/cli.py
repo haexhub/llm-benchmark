@@ -32,8 +32,10 @@ from benchmark.models import Finding
 app = typer.Typer(no_args_is_help=True, help="PR-Review Benchmark CLI.")
 corpus_app = typer.Typer(no_args_is_help=True, help="Benchmark-Corpus verwalten und prüfen.")
 live_app = typer.Typer(no_args_is_help=True, help="Private Live-PR-Shadow-Reviews verwalten.")
+runengine_app = typer.Typer(no_args_is_help=True, help="Corpus-Runs gegen gito/pr-agent planen und auswerten.")
 app.add_typer(corpus_app, name="corpus")
 app.add_typer(live_app, name="live")
+app.add_typer(runengine_app, name="runengine")
 console = Console()
 log = logging.getLogger("benchmark")
 
@@ -45,6 +47,7 @@ def main(
     reports_dir: Annotated[Path, typer.Option(help="Pfad zum reports/-Verzeichnis.")] = Path("reports"),
     log_level: Annotated[str | None, typer.Option(help="DEBUG|INFO|WARNING|ERROR")] = None,
 ) -> None:
+    """Load configuration and initialize logging for the CLI."""
     load_env()
     setup_logging(log_level)
     _ctx.update(config=config, runs_dir=runs_dir, reports_dir=reports_dir)
@@ -206,6 +209,7 @@ def ingest_live_pr(
 
 
 def _run_live_gito(snapshot: LivePRSnapshot, work_dir: Path, timeout: int) -> list[Finding]:
+    """Run gito against a live pull request snapshot and collect its findings."""
     from benchmark.tools.gito import GITO_REPORT_FILENAME, load_gito_findings, run_gito_on_pr
 
     owner, name = snapshot.repository.split("/", 1)
@@ -227,6 +231,7 @@ def _run_live_gito(snapshot: LivePRSnapshot, work_dir: Path, timeout: int) -> li
 
 
 def _run_live_pragent(diff_file: Path, work_dir: Path, timeout: int) -> list[Finding]:
+    """Run pr-agent against a live pull request snapshot and collect its findings."""
     import json
 
     from benchmark.tools.pr_agent import parse_pragent_json, run_pragent_on_diff
@@ -283,6 +288,7 @@ def run_live_pr(
     ingestor = LivePRIngestor(store, fetch_refs=fetch_pr_refs, fetch_diff=fetch_diff_for_refs)
 
     def _fetch_cr_comments_for_slug(repository: str, pr_number: int):
+        """Fetch CodeRabbit comments for the specified repository and pull request."""
         owner, name = repository.split("/", 1)
         return fetch_cr_comments(owner, name, pr_number)
 
@@ -296,10 +302,12 @@ def run_live_pr(
     work_dir.mkdir(parents=True, exist_ok=True)
 
     def _gito(snapshot: LivePRSnapshot) -> list[Finding]:
+        """Run gito in a fresh temporary attempt directory."""
         with tempfile.TemporaryDirectory(dir=work_dir, prefix="gito-") as attempt_dir:
             return _run_live_gito(snapshot, Path(attempt_dir), TOOL_TIMEOUT_SECONDS)
 
     def _pragent(snapshot: LivePRSnapshot) -> list[Finding]:
+        """Run pr-agent in a fresh temporary attempt directory."""
         with tempfile.TemporaryDirectory(dir=work_dir, prefix="pr-agent-") as attempt_dir:
             return _run_live_pragent(
                 store.diff_path(snapshot), Path(attempt_dir), TOOL_TIMEOUT_SECONDS
@@ -325,7 +333,305 @@ def run_live_pr(
     )
 
 
+@runengine_app.command("candidate-register")
+def runengine_candidate_register(
+    slug: Annotated[str, typer.Option(help="gito|pr-agent")],
+    tool_version: Annotated[str, typer.Option(help="Exakte Tool-Version.")],
+    package_digest: Annotated[str, typer.Option(help="Package/Image-Digest der Tool-Installation.")],
+) -> None:
+    """Registriert eine Kandidaten-Version und führt sofort ihren Capability-Probe aus (FR-012)."""
+    from benchmark.runengine.candidate import register_candidate
+    from benchmark.runengine.db import connect
+
+    model_config_hash = sha256(
+        f"{env('TOOL_LLM_BASE_URL', '')}:{env('TOOL_LLM_MODEL', '')}".encode()
+    ).hexdigest()
+    conn = connect()
+    try:
+        candidate = register_candidate(
+            conn, slug=slug, tool_version=tool_version, package_digest=package_digest,
+            model_endpoint_config_hash=model_config_hash,
+        )
+    finally:
+        conn.close()
+    if candidate.capability_probe_status != "passed":
+        console.print(
+            f"[red]Probe failed[/red] {candidate.slug} {candidate.id} "
+            f"(status={candidate.capability_probe_status}) — not usable in a scored plan"
+        )
+        raise typer.Exit(1)
+    console.print(f"[green]Registered and probe passed[/green] {candidate.slug} {candidate.id}")
+
+
+@runengine_app.command("plan-create")
+def runengine_plan_create(
+    suite_dir: Annotated[Path, typer.Option(help="z.B. review-corpus/review-v1")],
+    candidate: Annotated[list[str], typer.Option(help="Kandidaten-Slug, mehrfach angebbar.")],
+    repetitions: Annotated[int, typer.Option(help="Repetitionen pro Item/Kandidat.")] = 3,
+    retry_cap: Annotated[int, typer.Option(help="Max. automatische Retries pro Zelle.")] = 3,
+    score_policy_version: Annotated[str, typer.Option()] = "review-v1-policy-1",
+) -> None:
+    """Erstellt einen ExecutionPlan (idempotent pro Actor) und legt seine Attempts an."""
+    from benchmark.runengine.artifacts import ArtifactStore
+    from benchmark.runengine.attempts import create_attempts
+    from benchmark.runengine.candidate import get_candidate
+    from benchmark.runengine.db import connect
+    from benchmark.runengine.plan import PlanRequest, create_plan
+
+    suite_manifest = yaml.safe_load((suite_dir / "suite.yaml").read_text())
+    item_ids = sorted(p.name for p in (suite_dir / "items").iterdir() if p.is_dir())
+    model = env("TOOL_LLM_MODEL", "unknown")
+
+    conn = connect()
+    try:
+        candidate_versions = []
+        for slug in candidate:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM candidate_version WHERE slug = %s ORDER BY registered_at DESC LIMIT 1",
+                    (slug,),
+                )
+                row = cur.fetchone()
+            if row is None:
+                console.print(f"[red]No registered candidate_version for slug {slug!r}.[/red]")
+                raise typer.Exit(1)
+            candidate_versions.append(get_candidate(conn, row[0]))
+
+        request = PlanRequest(
+            suite_version_digest=suite_manifest["content_digest"],
+            candidate_version_ids=tuple(c.id for c in candidate_versions),
+            repetitions=repetitions,
+            retry_cap=retry_cap,
+            score_policy_version=score_policy_version,
+            created_by=env("USER", "unknown"),
+        )
+        plan = create_plan(conn, request)
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM attempt WHERE plan_id = %s", (plan.id,))
+            (existing_attempts,) = cur.fetchone()
+        if existing_attempts:
+            console.print(
+                f"[yellow]Plan {plan.id} already exists with {existing_attempts} attempts — nothing queued.[/yellow]"
+            )
+            return
+        store = ArtifactStore()
+        store.ensure_bucket()
+        attempts = create_attempts(
+            conn, store, plan, item_ids, model=model,
+            config_hash_by_candidate={c.id: c.model_endpoint_config_hash for c in candidate_versions},
+        )
+    finally:
+        conn.close()
+    console.print(f"[green]Plan {plan.id}[/green] — {len(attempts)} attempts queued")
+
+
+@runengine_app.command("plan-run")
+def runengine_plan_run(
+    plan_id: Annotated[str, typer.Argument()],
+    suite_dir: Annotated[Path, typer.Option(help="z.B. review-corpus/review-v1")],
+    oracle_dir: Annotated[
+        Path | None,
+        typer.Option(help="Protected Oracle-Verzeichnis (z.B. corpus-oracle/review-v1); ohne wird nicht evaluiert."),
+    ] = None,
+) -> None:
+    """Führt alle `queued` Attempts eines Plans aus (US1/US2)."""
+    from uuid import UUID
+
+    from benchmark.runengine.artifacts import ArtifactStore
+    from benchmark.runengine.attempts import run_attempt
+    from benchmark.runengine.candidate import get_candidate
+    from benchmark.runengine.db import connect
+
+    conn = connect()
+    store = ArtifactStore()
+    store.ensure_bucket()
+    workspace_root = _ctx["runs_dir"] / "runengine" / "workspaces"
+    try:
+        while True:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, item_id, candidate_version_id FROM attempt "
+                    "WHERE plan_id = %s AND status = 'queued' LIMIT 1",
+                    (UUID(plan_id),),
+                )
+                row = cur.fetchone()
+            if row is None:
+                break
+            attempt_id, item_id, candidate_version_id = row
+            candidate_version = get_candidate(conn, candidate_version_id)
+            outcome = run_attempt(
+                conn, store, attempt_id=attempt_id, corpus_root=suite_dir, item_id=item_id,
+                candidate_slug=candidate_version.slug, model=env("TOOL_LLM_MODEL", "unknown"),
+                config_hash=candidate_version.model_endpoint_config_hash,
+                workspace_root=workspace_root, runs_dir=_ctx["runs_dir"],
+                tool_version=candidate_version.tool_version,
+                oracle_root=oracle_dir,
+            )
+            if outcome is None:
+                console.print("[yellow]Resource lease busy — stopping this run.[/yellow]")
+                break
+    finally:
+        conn.close()
+    console.print(f"[green]Plan {plan_id} run pass complete.[/green]")
+
+
+@runengine_app.command("attempt-list")
+def runengine_attempt_list(plan_id: Annotated[str, typer.Option("--plan")]) -> None:
+    """Listet alle Attempts eines Plans mit Status/Terminal-Reason."""
+    from uuid import UUID
+
+    from benchmark.runengine.db import connect
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, item_id, candidate_version_id, sample_index, status, terminal_reason "
+                "FROM attempt WHERE plan_id = %s ORDER BY item_id, candidate_version_id, sample_index",
+                (UUID(plan_id),),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    for attempt_id, item_id, candidate_version_id, sample_index, status, terminal_reason in rows:
+        suffix = f" — {terminal_reason}" if terminal_reason else ""
+        console.print(f"{attempt_id} {item_id} {candidate_version_id} #{sample_index} [bold]{status}[/bold]{suffix}")
+
+
+@runengine_app.command("attempt-show")
+def runengine_attempt_show(attempt_id: Annotated[str, typer.Argument()]) -> None:
+    """Zeigt Details eines einzelnen Attempts."""
+    from uuid import UUID
+
+    from benchmark.runengine.db import connect
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM attempt WHERE id = %s", (UUID(attempt_id),))
+            columns = [d.name for d in cur.description]
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        console.print(f"[red]No such attempt: {attempt_id}[/red]")
+        raise typer.Exit(1)
+    for name, value in zip(columns, row, strict=True):
+        console.print(f"{name}: {value}")
+
+
+@runengine_app.command("score-show")
+def runengine_score_show(
+    plan_id: Annotated[str, typer.Option("--plan", help="Plan-ID.")],
+) -> None:
+    """Zeigt pro Kandidat Quality-/Operational-Metriken plus das Novel-Findings-Panel (US3)."""
+    from uuid import UUID
+
+    from benchmark.runengine.db import connect
+    from benchmark.runengine.scoring import compute_operational_metrics, compute_scores
+
+    conn = connect()
+    try:
+        plan_uuid = UUID(plan_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT suite_version_digest, score_policy_version "
+                "FROM execution_plan WHERE id = %s",
+                (plan_uuid,),
+            )
+            plan_row = cur.fetchone()
+            if plan_row is None:
+                console.print(f"[red]No such plan: {plan_id}[/red]")
+                raise typer.Exit(1)
+            suite_version_digest, score_policy_version = plan_row
+            cur.execute(
+                "SELECT DISTINCT candidate_version_id, slug FROM attempt "
+                "JOIN candidate_version ON candidate_version.id = attempt.candidate_version_id "
+                "WHERE plan_id = %s",
+                (plan_uuid,),
+            )
+            candidates = cur.fetchall()
+
+        for candidate_version_id, slug in candidates:
+            metrics = compute_scores(conn, plan_id=plan_uuid, candidate_version_id=candidate_version_id)
+            operational = compute_operational_metrics(
+                conn, plan_id=plan_uuid, candidate_version_id=candidate_version_id
+            )
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT nfr.verdict, count(*) FROM novel_finding_review nfr
+                    JOIN evaluation e ON e.id = nfr.evaluation_id
+                    JOIN attempt a ON a.id = e.attempt_id
+                    WHERE a.plan_id = %s AND a.candidate_version_id = %s
+                    GROUP BY nfr.verdict
+                    """,
+                    (plan_uuid, candidate_version_id),
+                )
+                novel_counts = dict(cur.fetchall())
+
+            console.print(f"\n[bold]{slug}[/bold] ({candidate_version_id})")
+            console.print(f"  suite_version_digest: sha256:{suite_version_digest}")
+            console.print(f"  score_policy_version: {score_policy_version}")
+            for name, metric in metrics.items():
+                spread = (
+                    f" [range {metric.range_min:.3f}-{metric.range_max:.3f}]"
+                    if metric.range_min is not None
+                    else ""
+                )
+                console.print(f"  {name}: {metric.value} (n={metric.sample_count}){spread}")
+            console.print("  operational:")
+            for name, metric in operational.items():
+                console.print(f"    {name}: {metric.value} (n={metric.sample_count})")
+            console.print(
+                "  novel_findings (never affects the score above): "
+                f"plausible={novel_counts.get('plausible_novel_defect', 0)} "
+                f"not_defect={novel_counts.get('not_defect', 0)} "
+                f"inconclusive={novel_counts.get('inconclusive', 0)}"
+            )
+    finally:
+        conn.close()
+
+
+@runengine_app.command("gold-candidates-export")
+def runengine_gold_candidates_export(
+    plan_id: Annotated[str, typer.Option("--plan", help="Plan-ID.")],
+) -> None:
+    """Gibt alle `proposed` Gold-Label-Kandidaten eines Plans aus (FR-009b)."""
+    from uuid import UUID
+
+    from benchmark.runengine.db import connect
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT gc.id, gc.item_id, gc.location_file, gc.location_line_start,
+                       gc.location_line_end, gc.finding_summary, gc.judge_reasoning, gc.created_at
+                FROM gold_label_candidate gc
+                JOIN novel_finding_review nfr ON nfr.id = gc.novel_finding_review_id
+                JOIN evaluation e ON e.id = nfr.evaluation_id
+                JOIN attempt a ON a.id = e.attempt_id
+                WHERE a.plan_id = %s AND gc.status = 'proposed'
+                """,
+                (UUID(plan_id),),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        console.print("[yellow]No proposed Gold-label candidates for this plan.[/yellow]")
+        return
+    for candidate_id, item_id, file, line_start, line_end, summary, reasoning, created_at in rows:
+        console.print(f"[bold]{candidate_id}[/bold] {item_id}:{file}:{line_start}-{line_end}")
+        console.print(f"  summary: {summary}")
+        console.print(f"  judge reasoning: {reasoning}")
+        console.print(f"  proposed_at: {created_at}")
+
+
 def _print_check(label: str, ok: bool, detail: str = "") -> None:
+    """Render a labeled pass or fail result with optional detail."""
     icon = "[green]✓[/green]" if ok else "[red]✗[/red]"
     line = f"{icon} {label}"
     if detail:
@@ -475,6 +781,7 @@ def check() -> int:
 
 
 def _resolve_repos():
+    """Resolve repository identifiers for the requested benchmark run."""
     from benchmark import pipeline  # noqa: F401
 
     return load_repos(_ctx.get("config") or Path("config/repos.yaml"))

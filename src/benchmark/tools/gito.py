@@ -17,7 +17,10 @@ Written by `gito review` to `<out_dir>/code-review-report.json`.
 from __future__ import annotations
 
 import json
+import math
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -102,7 +105,51 @@ def run_gito_on_pr(
     return run_cli(cmd, timeout=timeout, env=build_gito_env(), cwd=clone_dir)
 
 
+def run_gito_on_bundle(
+    bundle: Path,
+    base_sha: str,
+    head_sha: str,
+    clone_dir: Path,
+    out_dir: Path,
+    timeout: int = 600,
+    cancel_event: threading.Event | None = None,
+    tool_version: str | None = None,
+) -> RunResult:
+    """Run gito against a corpus item's own `repo.bundle` (no GitHub URL involved).
+
+    Unlike `run_gito_on_pr`, both revisions already live in the bundle — no
+    fetch is needed, only a local clone and a `--what`/`--against` diff.
+    """
+    clone_dir.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    clone_result = run_cli(
+        ["git", "clone", "--quiet", str(bundle), str(clone_dir)],
+        timeout=max(1, math.ceil(deadline - time.monotonic())), cancel_event=cancel_event,
+    )
+    if not clone_result.ok:
+        return clone_result
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "uv", "tool", "run", "--from", f"gito.bot=={tool_version}" if tool_version else "gito.bot", "gito",
+        "review",
+        "--what", head_sha,
+        "--against", base_sha,
+        "--no-merge-base",
+        "--out", str(out_dir.resolve()),
+        "--no-post-comment",
+    ]
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return RunResult(returncode=-1, stdout="", stderr="timeout", timed_out=True)
+    return run_cli(
+        cmd, timeout=max(1, math.ceil(remaining)), env=build_gito_env(), cwd=clone_dir,
+        cancel_event=cancel_event,
+    )
+
+
 def parse_gito_json(payload: dict[str, Any]) -> list[Finding]:
+    """Convert gito issue payloads into normalized benchmark findings."""
     findings: list[Finding] = []
     issues_by_file = payload.get("issues") or {}
     for file_path, issue_list in issues_by_file.items():
@@ -132,12 +179,14 @@ def parse_gito_json(payload: dict[str, Any]) -> list[Finding]:
 
 
 def load_gito_findings(path: Path) -> list[Finding]:
+    """Read a gito report and parse its normalized findings."""
     with path.open() as fh:
         payload = json.load(fh)
     return parse_gito_json(payload)
 
 
 def _iter_affected_lines(issue: dict[str, Any]):
+    """Yield the line locations attached to a gito issue."""
     affected = issue.get("affected_lines") or []
     if not affected:
         yield (0, 0, None)
@@ -173,6 +222,7 @@ def _map_severity(raw: Any) -> Severity:
 
 
 def _map_category(tags: list[str]) -> Category:
+    """Map gito issue tags to a benchmark finding category."""
     tags_lc = {t.lower() for t in tags if isinstance(t, str)}
     if tags_lc & {"bug", "correctness", "error-handling"}:
         return "bug"

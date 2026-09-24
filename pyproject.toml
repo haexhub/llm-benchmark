@@ -13,6 +13,8 @@ dependencies = [
     "anthropic>=0.34",
     "openai>=1.40",
     "rich>=13.7",
+    "psycopg[binary]>=3.2",
+    "boto3>=1.34",
 ]
 
 [project.scripts]
@@ -40,8 +42,9 @@ packages = ["src/benchmark"]
 testpaths = ["tests"]
 markers = [
     "live: tests hitting real external endpoints (opt-in, not CI default)",
+    "db: tests requiring the local docker-compose Postgres/MinIO stack (opt-in, not CI default)",
 ]
-addopts = "-m 'not live'"
+addopts = "-m 'not live and not db'"
 
 [tool.ruff]
 line-length = 100
