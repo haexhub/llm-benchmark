@@ -8,7 +8,7 @@ applied by a small runner in `runengine/db.py` — no SQLAlchemy, no Alembic.
 
 **Rationale**: The existing codebase has zero ORM usage anywhere; even its one
 existing durable store (`SqliteResourceLeaseStore`, feature 004) is plain
-`sqlite3` + hand-written SQL. The 005 catalogue schema (six tables, no complex
+`sqlite3` + hand-written SQL. The 005 catalogue schema (seven tables, no complex
 relational queries beyond what spec.md's FRs require) doesn't need an ORM's
 relationship-mapping or a full migration framework's branching/autogeneration
 features. Matching the existing style (CLAUDE.md "Surgical Changes: match
@@ -23,7 +23,7 @@ introduce the repo's first ORM dependency for marginal benefit.
 
 ## R2. Artifact object storage: boto3 against an S3-compatible endpoint
 
-**Decision**: `boto3>=1.34`'s S3 client, pointed at a `MINIO_*`-configured
+**Decision**: `boto3>=1.34`'s S3 client, pointed at a `RUNENGINE_S3_*`-configured
 endpoint (local docker-compose MinIO for dev; any real S3-compatible bucket in
 production), following the existing `env()`/`require_env()` config pattern.
 
@@ -161,15 +161,22 @@ duplicate logic for the same underlying checks.
 
 **Decision**: An Attempt is retried automatically only when its terminal
 reason is one of: subprocess timeout (`RunResult.timed_out`), non-zero exit
-with empty stdout/stderr (connection-refused-class CLI failure), or an
-explicit connection/timeout exception surfaced by the tool's HTTP client.
-Any Attempt that produced output the adapter could not parse (schema drift,
-FR-013) is never auto-retried — retrying it would just reproduce the same
-result deterministically.
+with empty stdout/stderr (connection-refused-class CLI failure), or a
+connection/timeout transport error reported on stderr by the child process.
+The adapter boundary maps those stable transport indicators (connection
+refused/reset, connect/read timeout, HTTP 408/429/5xx) to the retryable
+terminal reason `endpoint_unavailable`; an explicit connection/timeout
+exception surfaced by the tool's HTTP client maps to the same reason. A
+non-zero exit with an unrecognized error maps to `candidate_failed` and is not
+retried. Any Attempt that produced output the adapter could not parse (schema
+drift, FR-013) maps to `invalid` and is never auto-retried — retrying it would
+just reproduce the same result deterministically.
 
 **Rationale**: Directly reuses the existing `RunResult`/`RunResult.ok`
-vocabulary from `tools/base.py`, which already distinguishes "timed out" from
-"produced output" — no new failure taxonomy needs inventing.
+vocabulary from `tools/base.py` and makes the subprocess stderr boundary
+explicit. Focused retry tests cover timeout, transport text in stderr,
+unknown child failures and schema-drift parse failures; schema drift remains
+non-retryable.
 
 ## R10. Score-policy instantiation
 

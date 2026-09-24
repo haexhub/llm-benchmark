@@ -12,6 +12,6 @@
     "resource_profile": {"type": "string", "const": "local-94gb-gpu"},
     "score_policy_version": {"type": "string", "minLength": 1},
     "comparison_axis": {"type": "string", "const": "end_to_end_agent"},
-    "idempotency_key": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "Computed by the server from the other fields; a client MAY supply it to pre-check, but the server is authoritative."}
+    "idempotency_key": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "Computed by the server from the authenticated actor identity and the other fields; a client MAY supply it to pre-check, but the server is authoritative and scopes lookup to that actor."}
   }
 }

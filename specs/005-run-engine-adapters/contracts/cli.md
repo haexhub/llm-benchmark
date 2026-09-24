@@ -40,8 +40,8 @@ Zusätzlich per Env (`.env`, wie bestehend via `config.py`):
 **Argumente**: `--suite-dir PATH` (z. B. `review-corpus/review-v1`), `--candidate SLUG` (mehrfach, min. 1), `--repetitions N` (Default 3), `--retry-cap N` (Default 3, FR-013a).
 
 **Aktionen**:
-1. Idempotency-Key aus (Suite-Digest, sortierte Kandidaten-IDs, Repetitionen, Retry-Cap, Score-Policy-Version) berechnen.
-2. Existiert ein Plan mit demselben Key → diesen zurückgeben, nichts Neues anlegen.
+1. Der Server berechnet den Idempotency-Key aus der authentifizierten Actor-ID sowie (Suite-Digest, sortierte Kandidaten-IDs, Repetitionen, Retry-Cap, Score-Policy-Version). Ein vom Client gelieferter Key dient nur als Vorabprüfung.
+2. Existiert für denselben Actor ein Plan mit demselben serverseitig berechneten Key → diesen zurückgeben, nichts Neues anlegen. Ein anderer Actor erhält einen eigenen Plan.
 3. Sonst: `execution_plan`-Zeile plus einen `attempt`-Eintrag pro (Kandidat × Item × Repetition) in Status `queued` anlegen.
 
 **Exit-Code**: 0, gibt Plan-ID aus.

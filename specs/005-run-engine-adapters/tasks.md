@@ -33,10 +33,10 @@ enable independent implementation and testing of each story.
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
 - [ ] T005 Write migration `0001_initial.sql` (`candidate_version`, `execution_plan`, `attempt`, `score`, `evaluation`, `novel_finding_review`, `gold_label_candidate` tables per data-model.md) in `src/benchmark/runengine/migrations/0001_initial.sql`
-- [ ] T006 Implement the psycopg connection helper + migration runner in `src/benchmark/runengine/db.py` (depends on T005)
-- [ ] T007 [P] Implement S3-compatible content-addressed artifact put/get in `src/benchmark/runengine/artifacts.py`
-- [ ] T008 [P] Unit test: migration runner applies `0001_initial.sql` idempotently in `tests/runengine/test_db.py`
-- [ ] T009 [P] `db`-marked integration test: `db.py` connects/migrates and `artifacts.py` round-trips a blob against the docker-compose stack, in `tests/integration/test_runengine_infra.py`
+- [ ] T008 [P] Author the unit test that will verify the migration runner applies `0001_initial.sql` idempotently, in `tests/runengine/test_db.py`; execute it after T006
+- [ ] T009 [P] Author the `db`-marked integration test that will verify `db.py` connects/migrates and `artifacts.py` round-trips a blob against the docker-compose stack, in `tests/integration/test_runengine_infra.py`; execute it after T006 and T007
+- [ ] T006 Implement the psycopg connection helper + migration runner in `src/benchmark/runengine/db.py` (depends on T005 and the test authored in T008)
+- [ ] T007 [P] Implement S3-compatible content-addressed artifact put/get in `src/benchmark/runengine/artifacts.py` (depends on the test authored in T009)
 - [ ] T010 Mount an empty `runengine_app` Typer sub-app (`app.add_typer(runengine_app, name="runengine")`) in `src/benchmark/cli.py`
 
 **Checkpoint**: Foundation ready — user stories can now proceed.
@@ -58,7 +58,7 @@ digest (per spec.md's Independent Test for US1).
 
 - [ ] T011 [P] [US1] Unit test: an identical plan request returns the existing plan instead of creating a duplicate, in `tests/runengine/test_plan.py`
 - [ ] T012 [P] [US1] Unit test: attempt manifest fields (`is_warmup=false`, `comparison_axis="end_to_end_agent"`, matches `specs/002-benchmark-platform/contracts/attempt-manifest.schema.json`) and fresh-workspace Oracle isolation, in `tests/runengine/test_attempts.py`
-- [ ] T013 [P] [US1] Unit test: a transient failure creates a new retry Attempt up to the configured cap; a non-transient failure never retries, in `tests/runengine/test_retry.py`
+- [ ] T013 [P] [US1] Unit test: subprocess `RunResult` timeout and connection/timeout text on stderr map to a retryable terminal reason, while unknown child failures and schema drift do not; verify a transient failure creates a new retry Attempt up to the configured cap and a non-transient failure never retries, in `tests/runengine/test_retry.py`
 - [ ] T014 [P] [US1] Contract test: a plan request built by `plan.py` validates against `contracts/execution-plan-request.schema.json`, in `tests/runengine/test_contracts.py`
 
 ### Implementation for User Story 1
@@ -90,11 +90,11 @@ terminal, audited state.
 ### Tests for User Story 2
 
 - [ ] T024 [P] [US2] Unit test: of several attempts contending for `local-94gb-gpu`, only one executes at a time, in `tests/runengine/test_lease_integration.py`
-- [ ] T025 [P] [US2] Unit test: a worker crash mid-lease recovers via TTL expiry without double-scoring, in `tests/runengine/test_lease_recovery.py`
+- [ ] T025 [P] [US2] Unit test: recovery fences the prior attempt or confirms its endpoint handles are closed before reclaiming an expired lease, then retries or invalidates without double-scoring, in `tests/runengine/test_lease_recovery.py`
 
 ### Implementation for User Story 2
 
-- [ ] T026 [US2] Acquire/renew/release through the existing `SqliteResourceLeaseStore` — same `runs/run-engine.sqlite3` file and `local-94gb-gpu` key already used by `pipeline.py` and `live/runner.py` (research.md R3) — in `src/benchmark/runengine/attempts.py` (depends on T018)
+- [ ] T026 [US2] Acquire/renew/release through the existing `SqliteResourceLeaseStore` — same `runs/run-engine.sqlite3` file and `local-94gb-gpu` key already used by `pipeline.py` and `live/runner.py` (research.md R3) — maintain an independent heartbeat during candidate execution; if renewal returns `False`, terminate the candidate subprocess/process group and mark the Attempt failed; recovery must fence the prior process group or confirm its endpoint handles are closed before takeover — in `src/benchmark/runengine/attempts.py` (depends on T018)
 - [ ] T027 [US2] Record `queued_at`/`leased_at`/`started_at`/`evaluated_at`/`finished_at` separately per Attempt in `src/benchmark/runengine/attempts.py` (depends on T026)
 - [ ] T028 [US2] `db`-marked integration test: a runengine Attempt and a simulated feature-004 live-challenger attempt both targeting `local-94gb-gpu` never execute concurrently, in `tests/integration/test_runengine_shared_lease.py` (depends on T026)
 
@@ -186,7 +186,7 @@ everything else in this feature builds on."
 ### Parallel Opportunities
 
 - Setup: T002, T003, T004 in parallel.
-- Foundational: T007, T008, T009 in parallel (after T006).
+- Foundational: author T008 and T009 before T006/T007; execute T008 after T006 and T009 after T006/T007.
 - US1 tests: T011–T014 in parallel.
 - US2 tests: T024, T025 in parallel.
 - US3 tests: T029–T032 in parallel; T033, T034, T036 in parallel (independent modules; T035 depends on T034).

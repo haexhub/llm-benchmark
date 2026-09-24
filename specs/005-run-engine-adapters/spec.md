@@ -88,8 +88,10 @@ executing at any time while every attempt still reaches a terminal, audited stat
    poll at the same time, **Then** exactly one attempt obtains the lease and the others remain
    queued.
 2. **Given** a worker process exits while holding a lease, **When** lease recovery runs, **Then**
-   the attempt is either safely retried or marked `invalid` with a recorded reason — it is never
-   silently scored twice and never left holding a stale lease indefinitely.
+   recovery first fences the prior attempt or confirms that its endpoint handles are closed before
+   another worker takes the lease. TTL, PID, age or heartbeat evidence alone MUST NOT permit
+   takeover. The attempt is then either safely retried or marked `invalid` with a recorded reason —
+   it is never silently scored twice and never left holding a stale lease indefinitely.
 3. **Given** a running execution plan and a concurrently arriving live-PR-shadow challenger
    attempt, **When** both target the same resource profile, **Then** they are serialized through
    the same lease rather than executing in parallel.
@@ -166,8 +168,9 @@ any attempt executes.
   every other queued attempt indefinitely. If the failure is transient/connection-class, a fresh
   retry Attempt is created automatically up to the configured cap (FR-013a); once the cap is
   exhausted, the last attempt stays terminally failed.
-- An operator submits an identical plan request twice (same suite version, candidate versions,
-  repetitions, resource/score policy): the system returns the one existing plan, not a duplicate.
+- An operator submits an identical plan request twice (same actor, suite version, candidate
+  versions, repetitions, resource/score policy): the system returns that actor's existing plan, not
+  a duplicate. A different actor receives a separate plan identity.
 - A corpus item is later revised (new bundle digest) after a plan already referenced its previous
   version: the existing plan and its attempts keep referencing the old, pinned item version; nothing
   is retroactively rewritten.
@@ -182,8 +185,10 @@ any attempt executes.
 
 - **FR-001**: The system MUST create an immutable execution plan for a chosen corpus suite
   version, one or more registered review-tool candidate versions, a repetition count and a
-  resource/score policy, and MUST return the same plan on an identical repeated request
-  (idempotency).
+  resource/score policy, and MUST return the same plan on an identical repeated request from the
+  same authenticated actor (idempotency). The server-computed idempotency identity MUST include
+  that actor; a client-supplied key is only a pre-check. An identical request from another actor
+  creates or returns that actor's separate plan.
 - **FR-002**: The system MUST create one immutable Attempt per candidate-version/item/repetition
   cell, each with its own manifest recording suite-version digest, item ID, candidate-version ID,
   capability profile, resource profile, budget, timestamps and a terminal reason once finished.
@@ -196,7 +201,11 @@ any attempt executes.
   from the same durable lease store and resource key (`local-94gb-gpu`) that feature 004's live
   challenger runner and the existing `benchmark run` pipeline already use, so batch corpus
   attempts and live challenger attempts are provably serialized through the one lease already in
-  production use. No change to feature 004's own code is required for this.
+  production use. During candidate execution, an independent heartbeat MUST renew the lease; if
+  renewal returns `False`, the worker MUST terminate the candidate subprocess/process group and
+  mark the Attempt failed. Lease recovery MUST fence that process group or confirm that its
+  endpoint handles are closed before another worker takes over; the TTL alone is not a safety
+  proof. No change to feature 004's own code is required for this.
 - **FR-005**: The system MUST record queue wait, workspace preparation, active execution and
   evaluation duration separately for every Attempt, plus tokens/tool-call counts and estimated
   cost where the candidate or endpoint reports them.
@@ -290,11 +299,12 @@ any attempt executes.
   audited state.
 - **SC-003**: A full run of both candidates against the released 102-item corpus produces, for
   each candidate version, a recall/precision/F1 score with its sample count and exact score-policy
-  version. A second identical run against the same pinned suite version produces the same plan
-  identity, the same set of attempt manifests and the same classification logic applied to
-  whatever findings each run's attempts recorded — it is not required to produce bit-identical
-  scores, since the candidates call an LLM and repetitions exist precisely to sample that
-  variance rather than assume it away.
+  version. A second identical request from the same actor returns the same plan identity, the
+  existing set of attempt manifests and any existing scores; it does not create another LLM
+  sample. To collect a new sample, the operator must submit a deliberately distinct run request
+  (and therefore a distinct plan identity) while keeping the suite, candidate and policy versions
+  pinned. Scores need not be bit-identical across those distinct plans, since the candidates call
+  an LLM and repetitions exist precisely to sample that variance rather than assume it away.
 - **SC-004**: Runner-input inspection of any Attempt's workspace finds zero protected Oracle files
   (ground-truth labels, reproducers) at any point before or during execution.
 - **SC-005**: Every reported comparison separates quality, completion rate, latency and cost, and
