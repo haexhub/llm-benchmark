@@ -1,5 +1,5 @@
 {
-  "generation_id": "g_20260924T094741Z_e3b0",
+  "generation_id": "g_20260924T111010Z_e3b0",
   "molecules": [
     {
       "id": "com.github.haexmas.atoms.coding-guideline-python",
@@ -11,6 +11,15 @@
     },
     {
       "id": "com.github.haexmas.atoms.general-coding",
+      "paths": [
+        ".spaex/constitution.md"
+      ],
+      "revision": "d5c48d0eb6662da84086bf69a3ca041a494e2b26",
+      "source": "https://github.com/haexmas/atoms"
+    },
+    {
+      "hook_status": "ok",
+      "id": "com.github.haexmas.atoms.graphify-first-authoring",
       "paths": [
         ".spaex/constitution.md"
       ],
