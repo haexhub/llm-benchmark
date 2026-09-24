@@ -16,21 +16,21 @@
 
 ## Phase 3: Pilot Fixtures and Evaluation
 
-- [ ] T009 Create approved synthetic Python and TypeScript pilot fixture pairs.
-- [ ] T010 Create protected Gold labels, reproducers and auditable curator records.
+- [x] T009 Create approved synthetic Python and TypeScript pilot fixture pairs.
+- [x] T010 Create protected Gold labels, reproducers and auditable curator records.
 - [x] T011 Add finding mapping outcomes and usefulness-assessment persistence.
 - [x] T012 [P] Test matched, duplicate, false-positive, insufficient-evidence and
   unmatched-Gold outcomes.
-- [ ] T013 Render coverage and validation reports; show missing strata.
+- [x] T013 Render coverage and validation reports; show missing strata.
 
 ## Phase 4: v1 Release
 
-- [ ] T014 Curate at least 24 reviewed items with five clean controls.
-- [ ] T015 Run every Gold reproducer three times and record environment digests.
+- [x] T014 Curate at least 24 reviewed items with five clean controls.
+- [x] T015 Run every Gold reproducer three times and record environment digests.
 - [ ] T016 Perform holdout access/leakage review and release a content digest.
 - [ ] T017 Add the released suite to an execution-plan integration test.
 
 ## Verification
 
-- [ ] T018 `uv run benchmark corpus validate review-corpus/review-v1` exits 0.
+- [x] T018 `uv run benchmark corpus validate review-corpus/review-v1` exits 0.
 - [x] T019 `uv run pytest tests/corpus && uv run pytest && uv run ruff check .` exits 0.
