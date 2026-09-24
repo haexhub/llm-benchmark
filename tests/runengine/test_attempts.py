@@ -11,12 +11,14 @@ from uuid import UUID, uuid4
 import yaml
 
 from benchmark.corpus import compute_suite_content_digest
+from benchmark.live import SqliteResourceLeaseStore
 from benchmark.runengine.attempts import (
     ToolExecutionOutcome,
     _build_manifest,
     _finish_execution,
     item_uuid,
     materialize_workspace,
+    run_attempt,
 )
 from benchmark.tools.base import RunResult
 
@@ -144,3 +146,59 @@ def test_successful_output_is_not_flagged_as_drift(tmp_path: Path) -> None:
     assert outcome.ok is True
     assert outcome.schema_drift is False
     assert outcome.findings == ()
+
+
+class _AttemptInsertCountingCursor:
+    def __init__(self, conn: _AttemptInsertCountingConnection) -> None:
+        self._conn = conn
+
+    def __enter__(self) -> _AttemptInsertCountingCursor:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def execute(self, sql: str, params: tuple | None = None) -> None:
+        if sql.strip().startswith("INSERT INTO attempt"):
+            self._conn.attempt_inserts += 1
+        if sql.strip().startswith("UPDATE attempt SET status = %s, terminal_reason"):
+            self._conn.final_status = params[0]
+
+    def fetchone(self) -> None:
+        return None
+
+
+class _AttemptInsertCountingConnection:
+    def __init__(self) -> None:
+        self.attempt_inserts = 0
+        self.final_status: str | None = None
+
+    def cursor(self) -> _AttemptInsertCountingCursor:
+        return _AttemptInsertCountingCursor(self)
+
+    def commit(self) -> None:
+        pass
+
+
+def test_schema_drift_end_to_end_marks_invalid_without_creating_a_retry_attempt(
+    tmp_path: Path,
+) -> None:
+    corpus_root = create_valid_corpus(tmp_path)
+    conn = _AttemptInsertCountingConnection()
+    lease_store = SqliteResourceLeaseStore(tmp_path / "run-engine.sqlite3")
+
+    def _drifting_executor(**kwargs) -> ToolExecutionOutcome:
+        return ToolExecutionOutcome(
+            ok=False, timed_out=False, returncode=0, stdout="", stderr="",
+            schema_drift=True, schema_drift_detail="not json",
+        )
+
+    run_attempt(
+        conn, store=object(), attempt_id=uuid4(), corpus_root=corpus_root, item_id="demo-item",
+        candidate_slug="gito", model="m", config_hash="c" * 64,
+        workspace_root=tmp_path / "workspaces", runs_dir=tmp_path,
+        executor=_drifting_executor, lease_store=lease_store,
+    )
+
+    assert conn.final_status == "invalid"
+    assert conn.attempt_inserts == 0  # no new (retry) Attempt row created

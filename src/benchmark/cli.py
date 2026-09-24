@@ -333,7 +333,7 @@ def runengine_candidate_register(
     tool_version: Annotated[str, typer.Option(help="Exakte Tool-Version.")],
     package_digest: Annotated[str, typer.Option(help="Package/Image-Digest der Tool-Installation.")],
 ) -> None:
-    """Registriert eine Kandidaten-Version (FR-012 Vorstufe; Capability-Probe folgt in US4)."""
+    """Registriert eine Kandidaten-Version und führt sofort ihren Capability-Probe aus (FR-012)."""
     from benchmark.runengine.candidate import register_candidate
     from benchmark.runengine.db import connect
 
@@ -348,7 +348,13 @@ def runengine_candidate_register(
         )
     finally:
         conn.close()
-    console.print(f"[green]Registered[/green] {candidate.slug} {candidate.id}")
+    if candidate.capability_probe_status != "passed":
+        console.print(
+            f"[red]Probe failed[/red] {candidate.slug} {candidate.id} "
+            f"(status={candidate.capability_probe_status}) — not usable in a scored plan"
+        )
+        raise typer.Exit(1)
+    console.print(f"[green]Registered and probe passed[/green] {candidate.slug} {candidate.id}")
 
 
 @runengine_app.command("plan-create")

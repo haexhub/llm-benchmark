@@ -59,7 +59,21 @@ def idempotency_key(request: PlanRequest) -> str:
 
 
 def create_plan(conn: psycopg.Connection, request: PlanRequest) -> ExecutionPlan:
-    """Return the actor's existing plan for an identical request, or create a new one."""
+    """Return the actor's existing plan for an identical request, or create a new one.
+
+    Rejects any request referencing a candidate_version whose capability probe
+    hasn't passed (FR-012) — checked even on the idempotent-return path, so a
+    candidate that regresses after a plan was already created can't silently
+    stay referenced by a *new* identical request either.
+    """
+    from benchmark.runengine.candidate import get_candidate, require_passed
+
+    for candidate_version_id in request.candidate_version_ids:
+        candidate = get_candidate(conn, candidate_version_id)
+        if candidate is None:
+            raise ValueError(f"Unknown candidate_version: {candidate_version_id}")
+        require_passed(candidate)
+
     key = idempotency_key(request)
     with conn.cursor() as cur:
         cur.execute(

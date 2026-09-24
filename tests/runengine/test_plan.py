@@ -21,7 +21,14 @@ class _FakeCursor:
 
     def execute(self, sql: str, params: tuple | None = None) -> None:
         sql = sql.strip()
-        if sql.startswith("SELECT id, created_at FROM execution_plan"):
+        if sql.startswith("SELECT id, slug, tool_version"):
+            # create_plan's FR-012 gate: every candidate_version_id used in
+            # this test module is treated as already probe-passed.
+            (candidate_version_id,) = params
+            self._result = (
+                candidate_version_id, "gito", "1.0", "d" * 64, "e" * 64, "passed",
+            )
+        elif sql.startswith("SELECT id, created_at FROM execution_plan"):
             actor, key = params
             self._result = self._conn.plans_by_key.get((actor, key))
         elif sql.startswith("INSERT INTO execution_plan"):

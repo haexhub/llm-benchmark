@@ -178,17 +178,19 @@ before any attempt executes.
 
 ### Tests for User Story 4
 
-- [ ] T040 [P] [US4] Unit test: a candidate version with a failing capability probe cannot be referenced by `plan create`, in `tests/runengine/test_candidate.py`
-- [ ] T041 [P] [US4] Unit test: an unrecognized candidate output schema marks the Attempt `invalid` without triggering an auto-retry, in `tests/runengine/test_attempts.py`
+- [x] T040 [P] [US4] Unit test: a candidate version with a failing capability probe cannot be referenced by `plan create`, in `tests/runengine/test_candidate.py`
+- [x] T041 [P] [US4] Unit test: an unrecognized candidate output schema marks the Attempt `invalid` without triggering an auto-retry, in `tests/runengine/test_attempts.py`
 
 ### Implementation for User Story 4
 
-- [ ] T042 [P] [US4] Implement `CandidateVersion` registration + capability probe, reusing `check()`'s reachability logic (research.md R8), in `src/benchmark/runengine/candidate.py` (depends on T006)
-- [ ] T043 [US4] Reject plan creation referencing a `candidate_version` whose probe status isn't `passed`, in `src/benchmark/runengine/plan.py` (depends on T042, T015)
-- [ ] T044 [US4] CLI: `runengine candidate register` in `src/benchmark/cli.py` (depends on T042)
-- [ ] T045 [P] [US4] Detect adapter output schema drift, set `terminal_reason="invalid"`, and exclude it from `retry.py`'s transient set, in `src/benchmark/runengine/attempts.py` (depends on T018)
+- [x] T042 [P] [US4] Implement `CandidateVersion` registration + capability probe, reusing `check()`'s reachability logic (research.md R8), in `src/benchmark/runengine/candidate.py` (depends on T006)
+- [x] T043 [US4] Reject plan creation referencing a `candidate_version` whose probe status isn't `passed`, in `src/benchmark/runengine/plan.py` (depends on T042, T015)
+- [x] T044 [US4] CLI: `runengine candidate register` in `src/benchmark/cli.py` (depends on T042)
+- [x] T045 [P] [US4] Detect adapter output schema drift, set `terminal_reason="invalid"`, and exclude it from `retry.py`'s transient set, in `src/benchmark/runengine/attempts.py` (depends on T018) — already implemented as part of T018/US1; T041 adds the dedicated end-to-end test proving no retry attempt is created.
 
-**Checkpoint**: All four user stories are independently functional.
+**Checkpoint**: All four user stories are independently functional. Verified
+`candidate-register` for real (network available in this environment): a real
+`uv tool run --from gito.bot gito --help` probe passed and persisted.
 
 ---
 
