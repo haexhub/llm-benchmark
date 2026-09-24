@@ -327,6 +327,173 @@ def run_live_pr(
     )
 
 
+@runengine_app.command("candidate-register")
+def runengine_candidate_register(
+    slug: Annotated[str, typer.Option(help="gito|pr-agent")],
+    tool_version: Annotated[str, typer.Option(help="Exakte Tool-Version.")],
+    package_digest: Annotated[str, typer.Option(help="Package/Image-Digest der Tool-Installation.")],
+) -> None:
+    """Registriert eine Kandidaten-Version (FR-012 Vorstufe; Capability-Probe folgt in US4)."""
+    from benchmark.runengine.candidate import register_candidate
+    from benchmark.runengine.db import connect
+
+    model_config_hash = sha256(
+        f"{env('TOOL_LLM_BASE_URL', '')}:{env('TOOL_LLM_MODEL', '')}".encode()
+    ).hexdigest()
+    conn = connect()
+    try:
+        candidate = register_candidate(
+            conn, slug=slug, tool_version=tool_version, package_digest=package_digest,
+            model_endpoint_config_hash=model_config_hash,
+        )
+    finally:
+        conn.close()
+    console.print(f"[green]Registered[/green] {candidate.slug} {candidate.id}")
+
+
+@runengine_app.command("plan-create")
+def runengine_plan_create(
+    suite_dir: Annotated[Path, typer.Option(help="z.B. review-corpus/review-v1")],
+    candidate: Annotated[list[str], typer.Option(help="Kandidaten-Slug, mehrfach angebbar.")],
+    repetitions: Annotated[int, typer.Option(help="Repetitionen pro Item/Kandidat.")] = 3,
+    retry_cap: Annotated[int, typer.Option(help="Max. automatische Retries pro Zelle.")] = 3,
+    score_policy_version: Annotated[str, typer.Option()] = "review-v1-policy-1",
+) -> None:
+    """Erstellt einen ExecutionPlan (idempotent pro Actor) und legt seine Attempts an."""
+    from benchmark.runengine.artifacts import ArtifactStore
+    from benchmark.runengine.attempts import create_attempts
+    from benchmark.runengine.candidate import get_candidate
+    from benchmark.runengine.db import connect
+    from benchmark.runengine.plan import PlanRequest, create_plan
+
+    suite_manifest = yaml.safe_load((suite_dir / "suite.yaml").read_text())
+    item_ids = sorted(p.name for p in (suite_dir / "items").iterdir() if p.is_dir())
+    model = env("TOOL_LLM_MODEL", "unknown")
+
+    conn = connect()
+    try:
+        candidate_versions = []
+        for slug in candidate:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM candidate_version WHERE slug = %s ORDER BY registered_at DESC LIMIT 1",
+                    (slug,),
+                )
+                row = cur.fetchone()
+            if row is None:
+                console.print(f"[red]No registered candidate_version for slug {slug!r}.[/red]")
+                raise typer.Exit(1)
+            candidate_versions.append(get_candidate(conn, row[0]))
+
+        request = PlanRequest(
+            suite_version_digest=suite_manifest["content_digest"],
+            candidate_version_ids=tuple(c.id for c in candidate_versions),
+            repetitions=repetitions,
+            retry_cap=retry_cap,
+            score_policy_version=score_policy_version,
+            created_by=env("USER", "unknown"),
+        )
+        plan = create_plan(conn, request)
+        store = ArtifactStore()
+        store.ensure_bucket()
+        attempts = create_attempts(
+            conn, store, plan, item_ids, model=model,
+            config_hash_by_candidate={c.id: c.model_endpoint_config_hash for c in candidate_versions},
+        )
+    finally:
+        conn.close()
+    console.print(f"[green]Plan {plan.id}[/green] — {len(attempts)} attempts queued")
+
+
+@runengine_app.command("plan-run")
+def runengine_plan_run(
+    plan_id: Annotated[str, typer.Argument()],
+    suite_dir: Annotated[Path, typer.Option(help="z.B. review-corpus/review-v1")],
+) -> None:
+    """Führt alle `queued` Attempts eines Plans aus (US1/US2)."""
+    from uuid import UUID
+
+    from benchmark.runengine.artifacts import ArtifactStore
+    from benchmark.runengine.attempts import run_attempt
+    from benchmark.runengine.candidate import get_candidate
+    from benchmark.runengine.db import connect
+
+    conn = connect()
+    store = ArtifactStore()
+    store.ensure_bucket()
+    workspace_root = _ctx["runs_dir"] / "runengine" / "workspaces"
+    try:
+        while True:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, item_id, candidate_version_id FROM attempt "
+                    "WHERE plan_id = %s AND status = 'queued' LIMIT 1",
+                    (UUID(plan_id),),
+                )
+                row = cur.fetchone()
+            if row is None:
+                break
+            attempt_id, item_id, candidate_version_id = row
+            candidate_version = get_candidate(conn, candidate_version_id)
+            outcome = run_attempt(
+                conn, store, attempt_id=attempt_id, corpus_root=suite_dir, item_id=item_id,
+                candidate_slug=candidate_version.slug, model=env("TOOL_LLM_MODEL", "unknown"),
+                config_hash=candidate_version.model_endpoint_config_hash,
+                workspace_root=workspace_root, runs_dir=_ctx["runs_dir"],
+            )
+            if outcome is None:
+                console.print("[yellow]Resource lease busy — stopping this run.[/yellow]")
+                break
+    finally:
+        conn.close()
+    console.print(f"[green]Plan {plan_id} run pass complete.[/green]")
+
+
+@runengine_app.command("attempt-list")
+def runengine_attempt_list(plan_id: Annotated[str, typer.Option()]) -> None:
+    """Listet alle Attempts eines Plans mit Status/Terminal-Reason."""
+    from uuid import UUID
+
+    from benchmark.runengine.db import connect
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, item_id, candidate_version_id, sample_index, status, terminal_reason "
+                "FROM attempt WHERE plan_id = %s ORDER BY item_id, candidate_version_id, sample_index",
+                (UUID(plan_id),),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    for attempt_id, item_id, candidate_version_id, sample_index, status, terminal_reason in rows:
+        suffix = f" — {terminal_reason}" if terminal_reason else ""
+        console.print(f"{attempt_id} {item_id} {candidate_version_id} #{sample_index} [bold]{status}[/bold]{suffix}")
+
+
+@runengine_app.command("attempt-show")
+def runengine_attempt_show(attempt_id: Annotated[str, typer.Argument()]) -> None:
+    """Zeigt Details eines einzelnen Attempts."""
+    from uuid import UUID
+
+    from benchmark.runengine.db import connect
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM attempt WHERE id = %s", (UUID(attempt_id),))
+            columns = [d.name for d in cur.description]
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        console.print(f"[red]No such attempt: {attempt_id}[/red]")
+        raise typer.Exit(1)
+    for name, value in zip(columns, row, strict=True):
+        console.print(f"{name}: {value}")
+
+
 def _print_check(label: str, ok: bool, detail: str = "") -> None:
     icon = "[green]✓[/green]" if ok else "[red]✗[/red]"
     line = f"{icon} {label}"

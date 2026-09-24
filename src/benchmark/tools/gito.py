@@ -102,6 +102,39 @@ def run_gito_on_pr(
     return run_cli(cmd, timeout=timeout, env=build_gito_env(), cwd=clone_dir)
 
 
+def run_gito_on_bundle(
+    bundle: Path,
+    base_sha: str,
+    head_sha: str,
+    clone_dir: Path,
+    out_dir: Path,
+    timeout: int = 600,
+) -> RunResult:
+    """Run gito against a corpus item's own `repo.bundle` (no GitHub URL involved).
+
+    Unlike `run_gito_on_pr`, both revisions already live in the bundle — no
+    fetch is needed, only a local clone and a `--what`/`--against` diff.
+    """
+    clone_dir.mkdir(parents=True, exist_ok=True)
+    clone_result = run_cli(
+        ["git", "clone", "--quiet", str(bundle), str(clone_dir)], timeout=timeout
+    )
+    if not clone_result.ok:
+        return clone_result
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "uv", "tool", "run", "--from", "gito.bot", "gito",
+        "review",
+        "--what", head_sha,
+        "--against", base_sha,
+        "--no-merge-base",
+        "--out", str(out_dir.resolve()),
+        "--no-post-comment",
+    ]
+    return run_cli(cmd, timeout=timeout, env=build_gito_env(), cwd=clone_dir)
+
+
 def parse_gito_json(payload: dict[str, Any]) -> list[Finding]:
     findings: list[Finding] = []
     issues_by_file = payload.get("issues") or {}

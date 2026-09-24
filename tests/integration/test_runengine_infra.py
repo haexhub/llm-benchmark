@@ -11,8 +11,8 @@ from benchmark.runengine.db import connect, run_migrations
 def test_migrations_apply_against_real_postgres() -> None:
     conn = connect()
     try:
-        applied = run_migrations(conn)
-        assert "0001_initial.sql" in applied
+        # Idempotent regardless of whether another test/run already applied it.
+        run_migrations(conn)
         again = run_migrations(conn)
         assert again == []
         with conn.cursor() as cur:

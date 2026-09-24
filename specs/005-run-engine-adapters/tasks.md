@@ -56,22 +56,27 @@ digest (per spec.md's Independent Test for US1).
 
 ### Tests for User Story 1
 
-- [ ] T011 [P] [US1] Unit test: an identical plan request returns the existing plan instead of creating a duplicate, in `tests/runengine/test_plan.py`
-- [ ] T012 [P] [US1] Unit test: attempt manifest fields (`is_warmup=false`, `comparison_axis="end_to_end_agent"`, matches `specs/002-benchmark-platform/contracts/attempt-manifest.schema.json`) and fresh-workspace Oracle isolation, in `tests/runengine/test_attempts.py`
-- [ ] T013 [P] [US1] Unit test: subprocess `RunResult` timeout and connection/timeout text on stderr map to a retryable terminal reason, while unknown child failures and schema drift do not; verify a transient failure creates a new retry Attempt up to the configured cap and a non-transient failure never retries, in `tests/runengine/test_retry.py`
-- [ ] T014 [P] [US1] Contract test: a plan request built by `plan.py` validates against `contracts/execution-plan-request.schema.json`, in `tests/runengine/test_contracts.py`
+- [x] T011 [P] [US1] Unit test: an identical plan request returns the existing plan instead of creating a duplicate, in `tests/runengine/test_plan.py`
+- [x] T012 [P] [US1] Unit test: attempt manifest fields (`is_warmup=false`, `comparison_axis="end_to_end_agent"`, matches `specs/002-benchmark-platform/contracts/attempt-manifest.schema.json`) and fresh-workspace Oracle isolation, in `tests/runengine/test_attempts.py`
+- [x] T013 [P] [US1] Unit test: subprocess `RunResult` timeout and connection/timeout text on stderr map to a retryable terminal reason, while unknown child failures and schema drift do not; verify a transient failure creates a new retry Attempt up to the configured cap and a non-transient failure never retries, in `tests/runengine/test_retry.py`
+- [x] T014 [P] [US1] Contract test: a plan request built by `plan.py` validates against `contracts/execution-plan-request.schema.json`, in `tests/runengine/test_contracts.py`
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement `ExecutionPlan` creation with idempotency-key lookup in `src/benchmark/runengine/plan.py` (depends on T006)
-- [ ] T016 [US1] Create one `Attempt` row (+ manifest) per candidate × item × repetition in `src/benchmark/runengine/attempts.py` (depends on T015)
-- [ ] T017 [US1] Materialize a fresh workspace from the item's public fixture only, reusing `benchmark.corpus.materialize_review_input`, in `src/benchmark/runengine/attempts.py` (depends on T016)
-- [ ] T018 [US1] Execute the candidate (reusing `tools/gito.py` + `tools/pr_agent.py`) and persist raw output / normalized findings as Artifacts, in `src/benchmark/runengine/attempts.py` (depends on T017, T007)
-- [ ] T019 [US1] Implement transient-vs-non-transient classification (research.md R9) and bounded automatic retry (default 3, runtime-configurable) in `src/benchmark/runengine/retry.py` (depends on T018)
-- [ ] T020 [US1] CLI: `runengine plan create` in `src/benchmark/cli.py` (depends on T015)
-- [ ] T021 [US1] CLI: `runengine plan run` in `src/benchmark/cli.py` (depends on T019)
-- [ ] T022 [US1] CLI: `runengine attempt list` / `runengine attempt show` in `src/benchmark/cli.py` (depends on T016)
-- [ ] T023 [US1] `db`-marked integration test: `plan create` → `plan run` end-to-end with a stubbed candidate executor; verify distinct manifests and zero Oracle files in any workspace, in `tests/integration/test_runengine_plan.py` (depends on T020, T021)
+- [x] T015 [US1] Implement `ExecutionPlan` creation with idempotency-key lookup in `src/benchmark/runengine/plan.py` (depends on T006)
+- [x] T016 [US1] Create one `Attempt` row (+ manifest) per candidate × item × repetition in `src/benchmark/runengine/attempts.py` (depends on T015)
+- [x] T017 [US1] Materialize a fresh workspace from the item's public fixture only, reusing `benchmark.corpus.materialize_review_input`, in `src/benchmark/runengine/attempts.py` (depends on T016)
+- [x] T018 [US1] Execute the candidate (reusing `tools/gito.py` + `tools/pr_agent.py`) and persist raw output / normalized findings as Artifacts, in `src/benchmark/runengine/attempts.py` (depends on T017, T007)
+- [x] T019 [US1] Implement transient-vs-non-transient classification (research.md R9) and bounded automatic retry (default 3, runtime-configurable) in `src/benchmark/runengine/retry.py` (depends on T018)
+- [x] T020 [US1] CLI: `runengine plan create` in `src/benchmark/cli.py` (depends on T015)
+- [x] T021 [US1] CLI: `runengine plan run` in `src/benchmark/cli.py` (depends on T019)
+- [x] T022 [US1] CLI: `runengine attempt list` / `runengine attempt show` in `src/benchmark/cli.py` (depends on T016)
+- [x] T023 [US1] `db`-marked integration test: `plan create` → `plan run` end-to-end with a stubbed candidate executor; verify distinct manifests and zero Oracle files in any workspace, in `tests/integration/test_runengine_plan.py` (depends on T020, T021)
+
+Implementation note: a minimal `candidate.py` (bare `register_candidate`/`get_candidate`,
+no probe gating yet) was added ahead of schedule — US1 cannot create an Attempt without
+a `candidate_version` row to reference (FK). US4 (T042/T043) adds the actual
+capability-probe gate on top of this same table.
 
 **Checkpoint**: User Story 1 is fully functional and independently testable (MVP).
 

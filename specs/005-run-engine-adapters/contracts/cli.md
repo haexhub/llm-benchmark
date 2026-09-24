@@ -21,7 +21,7 @@ Zusätzlich per Env (`.env`, wie bestehend via `config.py`):
 | `RUNENGINE_S3_ENDPOINT_URL` / `_BUCKET` / `_ACCESS_KEY` / `_SECRET_KEY` | ja | S3-kompatibler Artifact-Store (lokal: MinIO aus `docker-compose.yml`) |
 | `NOVEL_DEFECT_JUDGE_MODEL` | nein (Fallback `JUDGE_LLM_MODEL`) | Modell für FR-009a (z. B. Claude Opus 5) |
 
-## Subkommando: `runengine candidate register`
+## Subkommando: `runengine candidate-register`
 
 **Zweck**: Eine Kandidaten-Version (gito oder pr-agent) registrieren und ihren Capability-Probe laufen lassen (FR-012).
 
@@ -33,7 +33,7 @@ Zusätzlich per Env (`.env`, wie bestehend via `config.py`):
 
 **Exit-Code**: 1 wenn Probe fehlschlägt (Zeile bleibt `failed`, ist damit für `plan create` gesperrt).
 
-## Subkommando: `runengine plan create`
+## Subkommando: `runengine plan-create`
 
 **Zweck**: Ein `ExecutionPlan` für einen Corpus-Suite-Version + Kandidaten + Repetitionen erstellen (FR-001, US1).
 
@@ -46,27 +46,29 @@ Zusätzlich per Env (`.env`, wie bestehend via `config.py`):
 
 **Exit-Code**: 0, gibt Plan-ID aus.
 
-## Subkommando: `runengine plan run`
+## Subkommando: `runengine plan-run`
 
 **Zweck**: Alle `queued` Attempts eines Plans abarbeiten (US1, US2).
 
+**Argumente**: `PLAN_ID` (positional), `--suite-dir PATH` (derselbe lokale Checkout, den `plan-create` schon validiert hat — der Plan speichert nur den content_digest, nicht den lokalen Pfad, daher muss er hier erneut angegeben werden).
+
 **Aktionen**:
-1. Pro Attempt: `SqliteResourceLeaseStore.acquire("local-94gb-gpu", ...)` (dieselbe Lease-Datei wie `benchmark run` und `benchmark live run").
+1. Pro Attempt: `SqliteResourceLeaseStore.acquire("local-94gb-gpu", ...)` (dieselbe Lease-Datei wie `benchmark run` und `benchmark live run`).
 2. Fixture materialisieren (nur öffentliche Bundle-Dateien, `benchmark.corpus.materialize_review_input`), Kandidat ausführen, Rohausgabe + normalisierte Findings als Artifacts in S3 ablegen.
 3. Bei transientem Fehler: neuen Retry-Attempt anlegen bis `retry_cap` (FR-013a). Bei Schema-Drift: Attempt `invalid`, kein Retry (FR-013).
-4. Nach Erfolg: `evaluator.py` klassifiziert Findings gegen Oracle-Labels (FR-009); `unmatched_gold`-Findings gehen an `evaluate_novel_finding` (FR-009a); `plausible_novel_defect` wird als `gold_label_candidate` gespeichert (FR-009b).
+4. Nach Erfolg (US3): `evaluator.py` klassifiziert Findings gegen Oracle-Labels (FR-009); `unmatched_gold`-Findings gehen an `evaluate_novel_finding` (FR-009a); `plausible_novel_defect` wird als `gold_label_candidate` gespeichert (FR-009b).
 5. Lease freigeben, egal ob Erfolg oder Fehler.
 
-**Exit-Code**: 0 auch wenn einzelne Attempts fehlgeschlagen sind (siehe `attempt list` für Details); nur bei Infrastruktur-Fehlern (DB/S3 unerreichbar) ≠ 0.
+**Exit-Code**: 0 auch wenn einzelne Attempts fehlgeschlagen sind (siehe `attempt-list` für Details); nur bei Infrastruktur-Fehlern (DB/S3 unerreichbar) ≠ 0.
 
-## Subkommando: `runengine attempt list` / `runengine attempt show ATTEMPT_ID`
+## Subkommando: `runengine attempt-list` / `runengine attempt-show ATTEMPT_ID`
 
 **Zweck**: Attempt-Status und Terminal-Reason inspizieren (US1, US3).
 
-## Subkommando: `runengine score show --plan PLAN_ID`
+## Subkommando: `runengine score-show --plan PLAN_ID`
 
 **Zweck**: Pro Kandidat: recall/precision/F1/false-positive-rate/duplicate-rate/completion-rate mit Sample-Count und Spannweite, getrennt operative Metriken (Queue-Wait, Laufzeit, Tokens, Kosten), plus separates Panel `plausible_novel_defect`-Count (FR-009a/FR-010/FR-011, US3).
 
-## Subkommando: `runengine gold-candidates export --plan PLAN_ID`
+## Subkommando: `runengine gold-candidates-export --plan PLAN_ID`
 
 **Zweck**: Alle `proposed` `gold_label_candidate`-Zeilen im Format ausgeben, das 003s Kurator-Pipeline konsumiert (FR-009b). Schreibt selbst keine Gold-Labels.
