@@ -17,3 +17,5 @@ build/
 .spaex/manifest.json.lock
 .spaex/composer.log
 .spaex/.stale
+
+graphify-out/
