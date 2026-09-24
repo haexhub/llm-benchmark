@@ -32,8 +32,10 @@ from benchmark.models import Finding
 app = typer.Typer(no_args_is_help=True, help="PR-Review Benchmark CLI.")
 corpus_app = typer.Typer(no_args_is_help=True, help="Benchmark-Corpus verwalten und prüfen.")
 live_app = typer.Typer(no_args_is_help=True, help="Private Live-PR-Shadow-Reviews verwalten.")
+runengine_app = typer.Typer(no_args_is_help=True, help="Corpus-Runs gegen gito/pr-agent planen und auswerten.")
 app.add_typer(corpus_app, name="corpus")
 app.add_typer(live_app, name="live")
+app.add_typer(runengine_app, name="runengine")
 console = Console()
 log = logging.getLogger("benchmark")
 

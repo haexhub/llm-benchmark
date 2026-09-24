@@ -32,12 +32,12 @@ enable independent implementation and testing of each story.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T005 Write migration `0001_initial.sql` (`candidate_version`, `execution_plan`, `attempt`, `score`, `evaluation`, `novel_finding_review`, `gold_label_candidate` tables per data-model.md) in `src/benchmark/runengine/migrations/0001_initial.sql`
-- [ ] T008 [P] Author the unit test that will verify the migration runner applies `0001_initial.sql` idempotently, in `tests/runengine/test_db.py`; execute it after T006
-- [ ] T009 [P] Author the `db`-marked integration test that will verify `db.py` connects/migrates and `artifacts.py` round-trips a blob against the docker-compose stack, in `tests/integration/test_runengine_infra.py`; execute it after T006 and T007
-- [ ] T006 Implement the psycopg connection helper + migration runner in `src/benchmark/runengine/db.py` (depends on T005 and the test authored in T008)
-- [ ] T007 [P] Implement S3-compatible content-addressed artifact put/get in `src/benchmark/runengine/artifacts.py` (depends on the test authored in T009)
-- [ ] T010 Mount an empty `runengine_app` Typer sub-app (`app.add_typer(runengine_app, name="runengine")`) in `src/benchmark/cli.py`
+- [x] T005 Write migration `0001_initial.sql` (`candidate_version`, `execution_plan`, `attempt`, `score`, `evaluation`, `novel_finding_review`, `gold_label_candidate` tables per data-model.md) in `src/benchmark/runengine/migrations/0001_initial.sql`
+- [x] T008 [P] Author the unit test that will verify the migration runner applies `0001_initial.sql` idempotently, in `tests/runengine/test_db.py`; execute it after T006
+- [x] T009 [P] Author the `db`-marked integration test that will verify `db.py` connects/migrates and `artifacts.py` round-trips a blob against the docker-compose stack, in `tests/integration/test_runengine_infra.py`; execute it after T006 and T007
+- [x] T006 Implement the psycopg connection helper + migration runner in `src/benchmark/runengine/db.py` (depends on T005 and the test authored in T008)
+- [x] T007 [P] Implement S3-compatible content-addressed artifact put/get in `src/benchmark/runengine/artifacts.py` (depends on the test authored in T009)
+- [x] T010 Mount an empty `runengine_app` Typer sub-app (`app.add_typer(runengine_app, name="runengine")`) in `src/benchmark/cli.py`
 
 **Checkpoint**: Foundation ready — user stories can now proceed.
 
