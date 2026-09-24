@@ -1,4 +1,4 @@
-"""db-marked: needs `docker compose up -d postgres minio` (quickstart.md)."""
+"""db-marked: needs `docker compose up -d postgres rustfs` (quickstart.md)."""
 from __future__ import annotations
 
 import pytest

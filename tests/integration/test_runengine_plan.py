@@ -1,4 +1,4 @@
-"""db-marked: end-to-end plan create -> plan run against real Postgres/MinIO,
+"""db-marked: end-to-end plan create -> plan run against real Postgres/RustFS,
 with a stubbed candidate executor (no real gito/pr-agent/LLM calls)."""
 from __future__ import annotations
 

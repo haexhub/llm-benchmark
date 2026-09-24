@@ -2,10 +2,10 @@
 
 ```bash
 git switch 005-run-engine-adapters
-docker compose up -d postgres minio
+docker compose up -d postgres rustfs
 uv sync
 uv run pytest              # hermetic unit tests only (db/live excluded by default)
-uv run pytest -m db         # against the docker-compose Postgres/MinIO stack
+uv run pytest -m db         # against the docker-compose Postgres/RustFS stack
 uv run ruff check .
 ```
 
