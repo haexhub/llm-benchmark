@@ -9,6 +9,23 @@ uv run pytest -m db         # against the docker-compose Postgres/RustFS stack
 uv run ruff check .
 ```
 
+### Switching an existing local stack from MinIO
+
+RustFS uses a new volume and does not migrate objects from the old
+`minio_data` volume. Because the PostgreSQL catalog can still reference those
+objects, reset both stores before starting the new stack:
+
+```bash
+docker compose down -v
+docker volume ls --filter label=com.docker.compose.volume=minio_data
+# Replace PROJECT_minio_data with the volume name listed above.
+docker volume rm PROJECT_minio_data
+docker compose up -d postgres rustfs
+```
+
+This intentionally discards existing local benchmark artifacts and their
+catalog entries. Do not run it if those artifacts must be preserved.
+
 `.env` additions beyond the existing `TOOL_LLM_*`/`JUDGE_LLM_*` variables:
 
 ```bash
